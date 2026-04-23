@@ -114,10 +114,13 @@ def hebrew_to_unicode(beta: str, *, strip_markers: bool = True) -> str:
             i += 2
             continue
 
-        # holem-waw "OW"
+        # holem-waw "OW" → waw with holem above. Unicode canonical
+        # order is base consonant first, then combining mark, so the
+        # waw must be emitted BEFORE the holem (previous order was
+        # backwards and broke NFC normalization + searches).
         if ch == "O" and i + 1 < n and beta[i + 1] == "W":
-            out.append(_HEBREW_VOWELS["O"])
             out.append(_HEBREW_CONSONANTS["W"])
+            out.append(_HEBREW_VOWELS["O"])
             i += 2
             continue
 
@@ -160,7 +163,8 @@ def hebrew_to_unicode(beta: str, *, strip_markers: bool = True) -> str:
 
         i += 1
 
-    return _apply_hebrew_finals("".join(out))
+    import unicodedata
+    return unicodedata.normalize("NFC", _apply_hebrew_finals("".join(out)))
 
 
 def _apply_hebrew_finals(s: str) -> str:
@@ -308,7 +312,9 @@ def greek_to_unicode(beta: str) -> str:
             continue
 
         if ch == "'":
-            out.append("’")
+            # TLG canonical is U+02BC MODIFIER LETTER APOSTROPHE for
+            # elisions, not U+2019 RIGHT SINGLE QUOTATION MARK.
+            out.append("ʼ")
             i += 1
             continue
 

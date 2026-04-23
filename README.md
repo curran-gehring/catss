@@ -43,6 +43,27 @@ for pair in verse.alignments:
     print(pair.mt_unicode, "↔", pair.lxx_unicode, pair.note)
 ```
 
+## Known limitations
+
+Tracked for a future pass — these do not block correctness of the
+common MT↔LXX + morphology use cases but are worth knowing:
+
+- **Psalms versification divergence.** MT and LXX disagree on verse
+  numbering in parts of the Psalter (LXX Pss 9/10, 113/114, 146/147,
+  plus subtitle-as-verse-1 offsets). `.par` headers are persisted
+  verbatim as-is; consumers matching on `(book, ch, v)` may get
+  misaligned hits for a handful of Psalms. Workaround: normalize
+  upstream, or use the LXX verse number shown in `[ ]` markup.
+- **Hebrew cantillation/accents.** CATSS parallel files ship the
+  consonantal text; accent numeric codes are stripped naively and
+  angle-bracket references (`<1.7>` etc.) are not filtered.
+- **Hebrew `position` is verse-local.** LXX morphology rows use
+  `position` as the word-in-verse index. Always query with the
+  composite `(book, chapter, verse, position)` key.
+- **Slim build.** The default db stores both BETA and Unicode for
+  every cell (~93 MB). A future `catss build --slim` would drop BETA
+  for bundle-size-sensitive consumers (iOS).
+
 ## Data attribution
 
 CATSS data © Center for Computer Analysis of Texts, University of

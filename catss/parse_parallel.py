@@ -122,8 +122,12 @@ def _parse_row(line: str, line_no: int) -> AlignmentRow | None:
 
     is_lxx_minus = bool(re.match(r"^-{3}($|\s|\{)", lxx))
     is_lxx_plus = mt_a.startswith("--+")
-    is_ketiv = "*" in mt and not mt.startswith("**")
-    is_qere = mt.startswith("**") or " **" in mt
+    # Ketiv/qere are NOT mutually exclusive — a single row can carry
+    # both, e.g. `*HWC) **HYC)` (ketiv with a following qere form). Detect
+    # each independently. A '*' that's part of '**' must not count for ketiv.
+    _mt_ketiv_probe = re.sub(r"\*\*", "", mt)
+    is_ketiv = "*" in _mt_ketiv_probe
+    is_qere = "**" in mt
     is_transposition = "~~~" in mt or "~~~" in lxx
 
     notes: list[str] = []

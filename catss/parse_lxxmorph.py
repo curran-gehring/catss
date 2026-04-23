@@ -76,18 +76,37 @@ def parse_file(path: pathlib.Path) -> Iterator[MorphVerse]:
             if current is None:
                 continue
 
-            fields = re.split(r"\s{2,}|\t+", line.strip())
-            if len(fields) < 3:
-                fields = line.strip().split()
-            if len(fields) < 3:
-                continue
-
-            # Canonical order: surface, parse, lemma.
-            # Some files put the parse code as two tokens ("N2", "DSF") —
-            # collapse fields[1..-1] as parse + lemma.
-            surface = fields[0]
-            lemma = fields[-1]
-            parse_code = " ".join(fields[1:-1]) if len(fields) > 2 else ""
+            # CATSS .mlxx is a fixed-width format:
+            #   cols  0-24   surface (25 chars, space-padded)
+            #   cols 25-34   parse code (10 chars — "V1  PAN", "RA  DSF",
+            #                 "VBI AMI3S" — internal single spaces stay)
+            #   cols 35+     lemma [optional space+preverb...]
+            #
+            # Splitting on 2+ spaces is WRONG: a row like "V1  PAN" has
+            # two spaces inside the parse-code column that look like a
+            # field boundary but are not. Slice by column instead, with a
+            # whitespace fallback for malformed rows.
+            if len(line) >= 35:
+                surface = line[0:25].rstrip()
+                parse_code = line[25:35].strip()
+                tail = line[35:].strip()
+                if not tail:
+                    continue
+                tail_parts = tail.split(None, 1)
+                lemma = tail_parts[0]
+                preverb = tail_parts[1] if len(tail_parts) > 1 else None
+                if preverb:
+                    parse_code = f"{parse_code} +{preverb}"
+            else:
+                parts = line.strip().split()
+                if len(parts) < 3:
+                    continue
+                surface = parts[0]
+                parse_code = parts[1]
+                lemma = parts[2]
+                preverb = " ".join(parts[3:]) if len(parts) > 3 else None
+                if preverb:
+                    parse_code = f"{parse_code} +{preverb}"
 
             word_pos += 1
             current.words.append(MorphWord(

@@ -84,7 +84,11 @@ class CATSS:
             raise FileNotFoundError(
                 f"catss.db not found at {path} — run `catss fetch && catss build`."
             )
-        self.conn = sqlite3.connect(path)
+        # check_same_thread=False so a single CATSS instance can service
+        # multiple FastAPI / asyncio worker threads. SQLite itself is still
+        # serialized; each caller gets correct results, but don't interleave
+        # transactions from different threads on the same connection.
+        self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
 
     # ---- lookups ----------------------------------------------------------

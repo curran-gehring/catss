@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS alignments (
     is_ketiv          INTEGER NOT NULL DEFAULT 0,
     is_qere           INTEGER NOT NULL DEFAULT 0,
     is_transposition  INTEGER NOT NULL DEFAULT 0,
-    notes_json        TEXT
+    notes_json        TEXT,
+    UNIQUE(verse_id, row_order)
 );
 CREATE INDEX IF NOT EXISTS idx_align_verse ON alignments(verse_id, row_order);
 
@@ -158,7 +159,17 @@ def _load_parallel(conn: sqlite3.Connection, par_dir: pathlib.Path, stats: dict)
         print(f"  parallel: {path.name}", file=sys.stderr)
         for verse in parse_parallel.parse_file(path):
             verse_id = _ensure_verse(conn, b.canon_id, verse.chapter, verse.verse)
-            for order, row in enumerate(verse.rows, 1):
+            # A few books (e.g. 1Esdras, Isaiah) emit the same (ch, v)
+            # across separated blocks — CATSS uses blank-line-separated
+            # sections *within* a verse. Continue row_order from the
+            # highest existing row so repeated blocks append rather than
+            # collide on the UNIQUE(verse_id, row_order) constraint.
+            start_order = (conn.execute(
+                "SELECT COALESCE(MAX(row_order), 0) FROM alignments WHERE verse_id=?",
+                (verse_id,),
+            ).fetchone()[0])
+            for offset, row in enumerate(verse.rows, 1):
+                order = start_order + offset
                 conn.execute(
                     "INSERT INTO alignments "
                     "(verse_id, row_order, mt_beta, mt_col_b_beta, lxx_beta, "

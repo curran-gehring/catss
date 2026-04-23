@@ -19,6 +19,8 @@ GREEK_CASES = [
     ("*)IHSOU=S",   "Ἰησοῦς"),
     ("E)N",         "ἐν"),
     ("TO\\N",       "τὸν"),
+    ("A)LL'",       "ἀλλʼ"),          # elision → U+02BC modifier apostrophe
+    ("KATA\\",      "κατὰ"),
 ]
 
 HEBREW_CASES = [
@@ -28,6 +30,8 @@ HEBREW_CASES = [
     ("H/$P+YM",     "השׁפטים"),
     ("YHWH",        "יהוה"),
     ("BN/YW",       "בניו"),
+    # holem-waw: canonical order is waw U+05D5 then combining holem U+05B9
+    ("$FLOWM",      "שָׁלוֹם"),
 ]
 
 
