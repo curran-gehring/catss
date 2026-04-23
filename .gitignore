@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+raw/parallel/*.par
+raw/lxxmorph/*.mlxx
+raw/morph/*.mlxx
+build/
+dist/
+catss.db
+catss.db-journal
+catss.db-shm
+catss.db-wal
+.DS_Store
