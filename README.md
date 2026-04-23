@@ -20,8 +20,11 @@ pip install -e .
 # 1. download raw CCAT files (~5 MB, one-time)
 catss fetch
 
-# 2. parse + build catss.db
+# 2. parse + build catss.db (93 MB — both BETA and Unicode preserved)
 catss build
+
+# ...or for iOS/mobile bundling, drop BETA columns:
+catss build --slim --db catss-slim.db    # 80 MB
 ```
 
 ## Query
@@ -60,9 +63,12 @@ common MT↔LXX + morphology use cases but are worth knowing:
 - **Hebrew `position` is verse-local.** LXX morphology rows use
   `position` as the word-in-verse index. Always query with the
   composite `(book, chapter, verse, position)` key.
-- **Slim build.** The default db stores both BETA and Unicode for
-  every cell (~93 MB). A future `catss build --slim` would drop BETA
-  for bundle-size-sensitive consumers (iOS).
+- **Slim build flag implemented.** `catss build --slim` drops the five
+  BETA columns and VACUUMs. Savings are modest (~17%: 93 → 80 MB)
+  because Unicode storage dominates; if further savings are needed,
+  dropping `notes_json` and `mt_col_b_beta` (rare) gets you a few more
+  MB. Slim builds still work with the Python query API and CLI — BETA
+  fields come back as `None`.
 
 ## Data attribution
 

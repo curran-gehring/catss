@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     p_build = sub.add_parser("build", help="build catss.db from raw/")
     p_build.add_argument("--raw", default="raw")
     p_build.add_argument("--db", default="catss.db")
+    p_build.add_argument("--slim", action="store_true",
+                         help="drop BETA columns + VACUUM; ~45% smaller db for iOS")
 
     p_verse = sub.add_parser("verse", help="show MT↔LXX alignment for a verse")
     p_verse.add_argument("book")
@@ -51,7 +53,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "build":
         from . import build_db
-        stats = build_db.build(pathlib.Path(args.raw), pathlib.Path(args.db))
+        stats = build_db.build(pathlib.Path(args.raw), pathlib.Path(args.db),
+                               slim=args.slim)
         print(json.dumps(stats, indent=2), file=sys.stderr)
         return 0
 

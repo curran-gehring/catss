@@ -90,6 +90,11 @@ class CATSS:
         # transactions from different threads on the same connection.
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self._slim = self._detect_slim()
+
+    def _detect_slim(self) -> bool:
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(alignments)")}
+        return "mt_beta" not in cols
 
     # ---- lookups ----------------------------------------------------------
 
@@ -109,10 +114,10 @@ class CATSS:
         aligns = [
             AlignmentPair(
                 row_order=r["row_order"],
-                mt_beta=r["mt_beta"],
+                mt_beta=_col(r, "mt_beta"),
                 mt_unicode=r["mt_unicode"],
-                mt_col_b_beta=r["mt_col_b_beta"],
-                lxx_beta=r["lxx_beta"],
+                mt_col_b_beta=_col(r, "mt_col_b_beta"),
+                lxx_beta=_col(r, "lxx_beta"),
                 lxx_unicode=r["lxx_unicode"],
                 is_lxx_minus=bool(r["is_lxx_minus"]),
                 is_lxx_plus=bool(r["is_lxx_plus"]),
@@ -130,10 +135,10 @@ class CATSS:
         morph = [
             MorphWord(
                 position=m["position"],
-                surface_beta=m["surface_beta"],
+                surface_beta=_col(m, "surface_beta"),
                 surface_unicode=m["surface_unicode"],
                 parse_code=m["parse_code"],
-                lemma_beta=m["lemma_beta"],
+                lemma_beta=_col(m, "lemma_beta"),
                 lemma_unicode=m["lemma_unicode"],
             )
             for m in self.conn.execute(
@@ -145,22 +150,25 @@ class CATSS:
         return Verse(ref=ref, alignments=aligns, lxx_morph=morph)
 
     def search_lemma(self, lemma: str, *, limit: int = 500) -> Iterable[LemmaHit]:
+        # Slim builds don't have lemma_beta — fall back to unicode-only match.
+        where = "m.lemma_unicode=?" if self._slim else "m.lemma_unicode=? OR m.lemma_beta=?"
+        params: tuple = (lemma,) if self._slim else (lemma, lemma)
+        surface_select = "m.surface_unicode" if self._slim else "m.surface_beta, m.surface_unicode"
         rows = self.conn.execute(
-            "SELECT m.position, m.surface_beta, m.surface_unicode, m.parse_code, "
-            "       b.osis, b.display_name, v.chapter, v.verse "
-            "FROM lxx_morph m "
-            "JOIN verses v ON m.verse_id=v.id "
-            "JOIN books b ON v.book_id=b.id "
-            "WHERE m.lemma_unicode=? OR m.lemma_beta=? "
-            "LIMIT ?",
-            (lemma, lemma, limit),
+            f"SELECT m.position, {surface_select}, m.parse_code, "
+            f"       b.osis, b.display_name, v.chapter, v.verse "
+            f"FROM lxx_morph m "
+            f"JOIN verses v ON m.verse_id=v.id "
+            f"JOIN books b ON v.book_id=b.id "
+            f"WHERE {where} LIMIT ?",
+            (*params, limit),
         )
         for r in rows:
             yield LemmaHit(
                 ref=VerseRef(osis=r["osis"], book_display=r["display_name"],
                              chapter=r["chapter"], verse=r["verse"]),
                 position=r["position"],
-                surface_beta=r["surface_beta"],
+                surface_beta=_col(r, "surface_beta"),
                 surface_unicode=r["surface_unicode"],
                 parse_code=r["parse_code"],
             )
@@ -179,3 +187,11 @@ def _parse_notes(raw: str | None) -> list[str]:
         return list(json.loads(raw))
     except Exception:
         return []
+
+
+def _col(row: sqlite3.Row, name: str):
+    """Safely read a possibly-absent column (for slim builds)."""
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return None

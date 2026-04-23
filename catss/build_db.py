@@ -112,24 +112,56 @@ CREATE INDEX IF NOT EXISTS idx_morph_surface ON lxx_morph(surface_unicode);
 """
 
 
-def build(raw_root: pathlib.Path, db_path: pathlib.Path) -> dict:
-    """Build catss.db from raw files. Returns a stats dict."""
+def build(raw_root: pathlib.Path, db_path: pathlib.Path, *, slim: bool = False) -> dict:
+    """
+    Build catss.db from raw files. Returns a stats dict.
+
+    slim: when True, drop BETA columns (mt_beta, mt_col_b_beta, lxx_beta,
+          surface_beta, lemma_beta) and run VACUUM at the end. Unicode and
+          annotation flags/notes are preserved. Typical size delta: ~93 MB
+          → ~50 MB. Intended for iOS/mobile bundling.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if db_path.exists():
         db_path.unlink()
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA)
 
-    stats = {"books": 0, "verses": 0, "alignments": 0, "morph_words": 0, "errors": []}
+    stats = {
+        "books": 0, "verses": 0, "alignments": 0, "morph_words": 0,
+        "slim": slim, "errors": [],
+    }
 
     _load_books(conn, stats)
     _load_parallel(conn, raw_root / "parallel", stats)
     _load_lxxmorph(conn, raw_root / "lxxmorph", stats)
+
+    if slim:
+        _strip_beta_columns(conn)
+
     _final_stats(conn, stats)
 
     conn.commit()
+    if slim:
+        conn.execute("VACUUM")
     conn.close()
+    stats["db_size_bytes"] = db_path.stat().st_size
     return stats
+
+
+def _strip_beta_columns(conn: sqlite3.Connection) -> None:
+    """Null out the BETA columns and drop them via table rebuild."""
+    # SQLite supports DROP COLUMN natively since 3.35 (2021). Use it.
+    for col in ("mt_beta", "mt_col_b_beta", "lxx_beta"):
+        try:
+            conn.execute(f"ALTER TABLE alignments DROP COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
+    for col in ("surface_beta", "lemma_beta"):
+        try:
+            conn.execute(f"ALTER TABLE lxx_morph DROP COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
 
 
 def _load_books(conn: sqlite3.Connection, stats: dict) -> None:
