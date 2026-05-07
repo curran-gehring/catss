@@ -13,3 +13,6 @@ catss.db-journal
 catss.db-shm
 catss.db-wal
 .DS_Store
+
+# CCAT-supplied format docs (subject to CCAT user agreement, kept locally)
+raw/docs/
