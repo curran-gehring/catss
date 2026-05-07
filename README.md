@@ -9,8 +9,10 @@ parallel-aligned MT/LXX.
 ## Install
 
 ```bash
-cd C:/Dev/catss
-python -m venv .venv && source .venv/Scripts/activate
+git clone https://github.com/curran-gehring/catss.git
+cd catss
+python -m venv .venv
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
@@ -24,8 +26,12 @@ catss fetch
 catss build
 
 # ...or for iOS/mobile bundling, drop BETA columns:
-catss build --slim --db catss-slim.db    # 80 MB
+catss build --slim --db catss-slim.db    # 25 MB
 ```
+
+Pre-built databases are also available as
+[release assets](https://github.com/curran-gehring/catss/releases) if you
+prefer not to run the build yourself.
 
 ## Query
 
@@ -46,29 +52,23 @@ for pair in verse.alignments:
     print(pair.mt_unicode, "↔", pair.lxx_unicode, pair.note)
 ```
 
+LXX morphology rows index words by their position within the verse, so
+always query using the composite key `(book, chapter, verse, position)`.
+
 ## Known limitations
 
-Tracked for a future pass — these do not block correctness of the
-common MT↔LXX + morphology use cases but are worth knowing:
-
-- **Psalms versification divergence.** MT and LXX disagree on verse
-  numbering in parts of the Psalter (LXX Pss 9/10, 113/114, 146/147,
-  plus subtitle-as-verse-1 offsets). `.par` headers are persisted
-  verbatim as-is; consumers matching on `(book, ch, v)` may get
-  misaligned hits for a handful of Psalms. Workaround: normalize
-  upstream, or use the LXX verse number shown in `[ ]` markup.
-- **Hebrew cantillation/accents.** CATSS parallel files ship the
-  consonantal text; accent numeric codes are stripped naively and
-  angle-bracket references (`<1.7>` etc.) are not filtered.
-- **Hebrew `position` is verse-local.** LXX morphology rows use
-  `position` as the word-in-verse index. Always query with the
-  composite `(book, chapter, verse, position)` key.
-- **Slim build flag implemented.** `catss build --slim` drops the five
-  BETA columns and VACUUMs. Savings are modest (~17%: 93 → 80 MB)
-  because Unicode storage dominates; if further savings are needed,
-  dropping `notes_json` and `mt_col_b_beta` (rare) gets you a few more
-  MB. Slim builds still work with the Python query API and CLI — BETA
-  fields come back as `None`.
+- **Psalms MT/LXX versification divergence.** MT and LXX disagree on verse
+  numbering in parts of the Psalter (LXX Pss 9/10, 113/114, 146/147, plus
+  subtitle-as-verse-1 offsets). `.par` headers are persisted verbatim;
+  consumers matching on `(book, ch, v)` may get misaligned hits for a
+  handful of Psalms. Workaround: normalize upstream, or use the LXX verse
+  number shown in `[ ]` markup.
+- **Hebrew text is consonantal only.** CATSS ships the unvocalized
+  Michigan-Claremont BHS text; accent numeric codes are stripped naively
+  and angle-bracket cross-references (`<1.7>` etc.) are not filtered. If
+  you need pointed and accented Hebrew, use the
+  [Open Scriptures Hebrew Bible](https://github.com/openscriptures/morphhb)
+  or Sefaria's BHS edition instead.
 
 ## Data attribution
 
@@ -79,8 +79,17 @@ coding and parallel alignment by the CATSS project under Emanuel Tov
 (Jerusalem team) and the Philadelphia team.
 
 Redistribution of the **raw** CCAT files is governed by the CATSS user
-agreement (`raw/docs/user-declaration.txt`); this repository ships
-only a derivative database. Not for commercial use without written
-consent from CCAT.
+agreement; this repository ships only the build pipeline (the raw files
+and the derived database are not redistributed here). Not for commercial
+use without written consent from the CATSS data owners.
 
-Report encoding errors to `kraft at ccat.sas.upenn.edu`.
+The original CCAT coordinator, Robert Kraft (UPenn), passed away in
+2023, and CCAT no longer has an active maintainer. For issues with
+this SQLite layer or the build pipeline, please open an issue on this
+repository.
+
+## License
+
+The source code in this repository is licensed under
+[CC BY-NC 4.0](LICENSE). The CATSS data the build pipeline consumes is
+governed separately by the CCAT user agreement.
