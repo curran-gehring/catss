@@ -28,6 +28,16 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--slim", action="store_true",
                          help="drop BETA columns + VACUUM; ~45% smaller db for iOS")
 
+    p_split = sub.add_parser(
+        "split",
+        help="split a slim db into base (alignment, ~22MB) + morph (~54MB) artifacts")
+    p_split.add_argument("--db", default="catss.db",
+                         help="source slim db (built with --slim, or the shipped catss.sqlite)")
+    p_split.add_argument("--base", default="catss.sqlite",
+                         help="output: alignment-only db to bundle in the app")
+    p_split.add_argument("--morph", default="catss_morph.sqlite",
+                         help="output: lxx_morph optional download pack")
+
     p_verse = sub.add_parser("verse", help="show MT↔LXX alignment for a verse")
     p_verse.add_argument("book")
     p_verse.add_argument("chapter", type=int)
@@ -55,6 +65,13 @@ def main(argv: list[str] | None = None) -> int:
         from . import build_db
         stats = build_db.build(pathlib.Path(args.raw), pathlib.Path(args.db),
                                slim=args.slim)
+        print(json.dumps(stats, indent=2), file=sys.stderr)
+        return 0
+
+    if args.cmd == "split":
+        from . import split as splitmod
+        stats = splitmod.split(pathlib.Path(args.db), pathlib.Path(args.base),
+                               pathlib.Path(args.morph))
         print(json.dumps(stats, indent=2), file=sys.stderr)
         return 0
 
