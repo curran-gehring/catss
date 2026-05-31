@@ -34,7 +34,10 @@ from dataclasses import dataclass, field
 from typing import Iterator
 
 
-VERSE_HEADER = re.compile(r"^\s*([1-4]?\s*[A-Za-z]+)\s+(\d+):(\d+)\s*$")
+# The chapter is optional: single-chapter books (Obadiah — the only one in the
+# Hebrew OT) label verses as "Obad 1" with no "chapter:" prefix. Without the
+# optional group those headers never matched and the whole book was dropped.
+VERSE_HEADER = re.compile(r"^\s*([1-4]?\s*[A-Za-z]+)\s+(?:(\d+):)?(\d+)\s*$")
 
 
 @dataclass
@@ -81,7 +84,9 @@ def parse_file(path: pathlib.Path) -> Iterator[Verse]:
                 if current is not None and current.rows:
                     yield current
                 book = m.group(1).strip()
-                current = Verse(book=book, chapter=int(m.group(2)),
+                # group(2) (chapter) is None for single-chapter books → ch 1.
+                chapter = int(m.group(2)) if m.group(2) else 1
+                current = Verse(book=book, chapter=chapter,
                                 verse=int(m.group(3)), rows=[])
                 continue
 
