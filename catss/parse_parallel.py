@@ -37,7 +37,16 @@ from typing import Iterator
 # The chapter is optional: single-chapter books (Obadiah — the only one in the
 # Hebrew OT) label verses as "Obad 1" with no "chapter:" prefix. Without the
 # optional group those headers never matched and the whole book was dropped.
-VERSE_HEADER = re.compile(r"^\s*([1-4]?\s*[A-Za-z]+)\s+(?:(\d+):)?(\d+)\s*$")
+#
+# The book token must allow digits and "/", not just letters: the Reigns books
+# carry the LXX Kingdoms notation in their headers — "1Sam/K", "2Sam/K",
+# "1/3Kgs" (1 Kings = 3 Reigns), "2/4Kgs" (2 Kings = 4 Reigns) — and Psalm 151
+# is labeled "Ps151". The old letters-only token choked on the "/" and the
+# trailing digits, so every header in those five files failed to match and all
+# of Samuel–Kings (plus Ps 151) was silently dropped from the build. The book
+# itself is assigned from the FILE (see build_db `_load_parallel`), so this
+# token is informational; only the chapter/verse groups must parse.
+VERSE_HEADER = re.compile(r"^\s*([0-9A-Za-z][0-9A-Za-z/]*)\s+(?:(\d+):)?(\d+)\s*$")
 
 
 @dataclass
