@@ -59,8 +59,15 @@ _BOOKS: tuple[Book, ...] = (
     _b(24, "Jer",    "41.Jer",      ("52.Jer1",    "53.Jer2"),        "Jeremiah"),
     _b(25, "Lam",    "43.Lam",      "56.Lam",                         "Lamentations"),
     _b(26, "Ezek",   "44.Ezekiel",  ("57.Ezek1",   "58.Ezek2"),       "Ezekiel"),
+    # Daniel: CCAT ships an MT↔LXX parallel in BOTH editions (45.DanielOG,
+    # 46.DanielTh). We make THEODOTION the canonical Daniel (osis "Dan" →
+    # FW book 27 via remap_catss_bookids), carrying its parallel + morph just
+    # like every other book — this is what the FW Parallel + LXX tabs read, and
+    # it matches the Theodotion edition the bible_interlinear Greek interlinear
+    # uses for Daniel. The Old Greek stays as a morph-only side book (osis
+    # "DanOG" → id+1000, never queried by FW).
     _b(27, "DanOG",  None,          "61.DanielOG",                    "Daniel (OG)"),
-    _b(28, "DanTh",  None,          "62.DanielTh",                    "Daniel (Theodotion)"),
+    _b(28, "Dan",    "46.DanielTh", "62.DanielTh",                    "Daniel"),
     _b(29, "Hos",    "28.Hosea",    "38.Hosea",                       "Hosea"),
     _b(30, "Joel",   "31.Joel",     "41.Joel",                        "Joel"),
     _b(31, "Amos",   "30.Amos",     "40.Amos",                        "Amos"),
