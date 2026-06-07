@@ -1,13 +1,16 @@
 """
 Canonical book registry. Keyed by CATSS file prefix (e.g. '10.Ruth').
 
-Covers the 44 .par parallel files + the 62 .mlxx LXX-morph files. OT
+Covers the 45 .par parallel files + the 62 .mlxx LXX-morph files. OT
 book_id 1..39 follows the Protestant / Hebrew canon; 40..99 slots hold
 deuterocanonicals / LXX-only books and textual variants.
 
-Several books split across multiple mlxx files (Gen 1/2, Psalms 1/2,
-Isaiah 1/2, Jer 1/2, Ezek 1/2, Daniel OG/Th, Sus OG/Th, Bel OG/Th).
-We flatten each split into one canonical book with multiple source files.
+A few single books are split across multiple mlxx files (Gen 1/2, Psalms 1/2,
+Isaiah 1/2, Jer 1/2, Ezek 1/2); we flatten each into one canonical book with
+multiple source files. Distinct from that, books that survive in two whole
+Greek editions — Daniel, Susanna, Bel — are kept as SEPARATE books (e.g.
+Daniel: "Dan" = Theodotion, the canonical one carrying its MT↔LXX parallel +
+morph; "DanOG" = Old Greek, morph only), not flattened.
 """
 from dataclasses import dataclass
 
