@@ -37,6 +37,7 @@ Schema (SQLite):
     id                INTEGER PRIMARY KEY
     verse_id          INTEGER NOT NULL REFERENCES verses(id)
     position          INTEGER NOT NULL         -- 1-based word-in-verse
+    subverse          TEXT                     -- 'a'.. for LXX-addition words; NULL = canonical
     surface_beta      TEXT NOT NULL
     surface_unicode   TEXT NOT NULL
     parse_code        TEXT
@@ -99,6 +100,7 @@ CREATE TABLE IF NOT EXISTS lxx_morph (
     id               INTEGER PRIMARY KEY,
     verse_id         INTEGER NOT NULL REFERENCES verses(id),
     position         INTEGER NOT NULL,
+    subverse         TEXT,             -- 'a'.. for LXX-addition words (Esth 1:1a); NULL = canonical verse text
     surface_beta     TEXT NOT NULL,
     surface_unicode  TEXT NOT NULL,
     parse_code       TEXT,
@@ -273,11 +275,12 @@ def _load_lxxmorph(conn: sqlite3.Connection, mlxx_dir: pathlib.Path, stats: dict
                     try:
                         conn.execute(
                             "INSERT INTO lxx_morph "
-                            "(verse_id, position, surface_beta, surface_unicode, "
-                            " parse_code, lemma_beta, lemma_unicode) "
-                            "VALUES (?,?,?,?,?,?,?)",
+                            "(verse_id, position, subverse, surface_beta, "
+                            " surface_unicode, parse_code, lemma_beta, lemma_unicode) "
+                            "VALUES (?,?,?,?,?,?,?,?)",
                             (
                                 verse_id, start_pos + w.position,
+                                mverse.subverse,
                                 w.surface_beta,
                                 greek_to_unicode(w.surface_beta),
                                 w.parse_code or None,

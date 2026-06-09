@@ -52,16 +52,20 @@ def test_header_formats(tmp_path, header, expect_ch, expect_v):
 
 
 def test_esther_subverses_parse_as_separate_blocks(tmp_path):
-    # 1:1a and 1:1b both map to (1, 1); build_db merges them by
-    # continuing the position counter.
+    # 1:1a and 1:1b both map to (1, 1) with the letter captured; build_db
+    # merges them by continuing the position counter.
     verses = _parse(tmp_path, [
         "Esth 1:1a",
         _line("E)N", "P", "E)N"),
         "",
         "Esth 1:1b",
         _line("KAI\\", "C", "KAI/"),
+        "",
+        "Esth 1:2",
+        _line("O(/TE", "C", "O(/TE"),
     ])
-    assert [(v.chapter, v.verse) for v in verses] == [(1, 1), (1, 1)]
+    assert [(v.chapter, v.verse, v.subverse) for v in verses] == [
+        (1, 1, "a"), (1, 1, "b"), (1, 2, None)]
 
 
 def test_preverb_appended_to_parse_code(tmp_path):

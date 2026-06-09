@@ -54,6 +54,7 @@ class AlignmentPair:
 @dataclass(frozen=True)
 class MorphWord:
     position: int
+    subverse: str | None        # 'a'.. for LXX-addition words (Esth 1:1a)
     surface_beta: str
     surface_unicode: str
     parse_code: str | None
@@ -135,6 +136,7 @@ class CATSS:
         morph = [
             MorphWord(
                 position=m["position"],
+                subverse=_col(m, "subverse"),
                 surface_beta=_col(m, "surface_beta"),
                 surface_unicode=m["surface_unicode"],
                 parse_code=m["parse_code"],

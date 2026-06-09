@@ -38,12 +38,14 @@ def raw(tmp_path):
         + "2Esdr 11:1\n"
         + _mlxx_line("LO/GOI", "N2  NPM", "LO/GOS") + "\n",
         encoding="utf-8")
-    # Esther morph with subverses that merge into (1, 1)
+    # Esther morph with subverses that merge into (1, 1), plus a canonical verse
     (root / "lxxmorph" / "20.Esther.mlxx").write_text(
         "Esth 1:1a\n"
         + _mlxx_line("E)N", "P", "E)N") + "\n\n"
         + "Esth 1:1b\n"
-        + _mlxx_line("ME/SW|", "N2  DSN", "ME/SOS") + "\n",
+        + _mlxx_line("ME/SW|", "N2  DSN", "ME/SOS") + "\n\n"
+        + "Esth 1:2\n"
+        + _mlxx_line("O(/TE", "C", "O(/TE") + "\n",
         encoding="utf-8")
     # Psalms2 morph containing Ps 151 → remapped to the Ps151 book
     (root / "lxxmorph" / "29.Psalms2.mlxx").write_text(
@@ -102,18 +104,23 @@ def test_esther_subverses_merge_with_continued_positions(built):
     conn, _ = built
     esth = by_osis("Esth").canon_id
     rows = conn.execute(
-        "SELECT m.position, m.surface_unicode FROM lxx_morph m "
+        "SELECT m.position, m.subverse, m.surface_unicode FROM lxx_morph m "
         "JOIN verses v ON m.verse_id=v.id "
         "WHERE v.book_id=? AND v.chapter=1 AND v.verse=1 ORDER BY m.position",
         (esth,)).fetchall()
-    assert [(r["position"], r["surface_unicode"]) for r in rows] == [
-        (1, "ἐν"), (2, "μέσῳ")]                # μέσῳ: medial sigma regression
+    assert [(r["position"], r["subverse"], r["surface_unicode"]) for r in rows] == [
+        (1, "a", "ἐν"), (2, "b", "μέσῳ")]      # μέσῳ: medial sigma regression
+    # canonical (non-addition) words carry NULL subverse
+    assert conn.execute(
+        "SELECT m.subverse FROM lxx_morph m JOIN verses v ON m.verse_id=v.id "
+        "WHERE v.book_id=? AND v.chapter=1 AND v.verse=2",
+        (esth,)).fetchone()["subverse"] is None
 
 
 def test_morph_word_count_is_exact(built):
     conn, stats = built
     assert stats["morph_words"] == conn.execute(
-        "SELECT COUNT(*) FROM lxx_morph").fetchone()[0] == 5
+        "SELECT COUNT(*) FROM lxx_morph").fetchone()[0] == 6
     # "missing:" entries are expected (fixture only ships a few books);
     # anything else is a real parse/insert failure.
     real_errors = [e for e in stats["errors"] if not e.startswith("missing:")]
@@ -132,6 +139,6 @@ def test_split_slim_build(raw, tmp_path):
     stats = splitmod.split(slim_db, tmp_path / "b.sqlite", tmp_path / "m.sqlite")
     assert stats["base"]["rows"]["alignments"] == 3
     assert stats["base"]["rows"]["lxx_morph"] is None
-    assert stats["morph"]["rows"]["lxx_morph"] == 5
+    assert stats["morph"]["rows"]["lxx_morph"] == 6
     assert stats["morph"]["rows"]["alignments"] is None
     assert stats["base"]["integrity"] == stats["morph"]["integrity"] == "ok"

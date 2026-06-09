@@ -37,7 +37,9 @@ from typing import Iterator
 # were silently dropped. The chapter is optional: single-chapter books
 # (EpJer, Susanna, Bel) label verses "EpJer 1" with no "chapter:" prefix.
 # A trailing subverse letter ("Esth 1:1a" — the LXX Esther additions) is
-# accepted and discarded; consecutive subverses merge into the base verse.
+# captured in MorphVerse.subverse; consecutive subverses merge into the
+# base verse downstream, with the letter preserved per word so consumers
+# can tell addition text from the canonical verse.
 # A verse range ("TobS 9:3-4", "Dan 5:26-28") files under its first verse.
 VERSE_HEADER = re.compile(
     r"^\s*([0-9A-Za-z][0-9A-Za-z/]*)\s+(?:(\d+):)?(\d+)(?:-\d+)?([a-z])?\s*$")
@@ -65,6 +67,7 @@ class MorphVerse:
     book: str
     chapter: int
     verse: int
+    subverse: str | None = None   # 'a'.. for LXX-addition blocks (Esth 1:1a)
     words: list[MorphWord] = field(default_factory=list)
 
 
@@ -102,7 +105,8 @@ def parse_file(path: pathlib.Path) -> Iterator[MorphVerse]:
                 last_book = book
                 last_chapter = chapter
                 current = MorphVerse(book=book, chapter=chapter,
-                                     verse=int(m.group(3)))
+                                     verse=int(m.group(3)),
+                                     subverse=m.group(4))
                 word_pos = 0
                 continue
 

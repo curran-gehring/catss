@@ -129,6 +129,7 @@ def _verse_as_dict(v) -> dict:
         "lxx_morph": [
             {
                 "position": m.position,
+                "subverse": m.subverse,
                 "surface": m.surface_unicode,
                 "parse": m.parse_code,
                 "lemma": m.lemma_unicode,
