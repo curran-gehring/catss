@@ -2,8 +2,12 @@
 Canonical book registry. Keyed by CATSS file prefix (e.g. '10.Ruth').
 
 Covers the 45 .par parallel files + the 62 .mlxx LXX-morph files. OT
-book_id 1..39 follows the Protestant / Hebrew canon; 40..99 slots hold
-deuterocanonicals / LXX-only books and textual variants.
+book_ids roughly follow the Protestant / Hebrew canon order but are NOT
+the standard numbering: DanOG holds 27, so Dan=28 and every book from
+Hosea on is shifted +1 (Mal=40). JoshA/JudgA sit at 61/62; 70+ holds
+deuterocanonicals / LXX-only books. Downstream consumers (FirstWord's
+remap_catss_bookids) remap these to their own canon — anyone else must
+map by `osis`, never by assuming standard book numbers.
 
 A few single books are split across multiple mlxx files (Gen 1/2, Psalms 1/2,
 Isaiah 1/2, Jer 1/2, Ezek 1/2); we flatten each into one canonical book with

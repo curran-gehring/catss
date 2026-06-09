@@ -19,14 +19,18 @@ pip install -e .
 ## Build the database
 
 ```bash
-# 1. download raw CCAT files (~5 MB, one-time)
+# 1. download raw CCAT files (~35 MB, one-time)
 catss fetch
 
-# 2. parse + build catss.db (93 MB — both BETA and Unicode preserved)
+# 2. parse + build catss.db (~114 MB — both BETA and Unicode preserved)
 catss build
 
 # ...or for iOS/mobile bundling, drop BETA columns:
-catss build --slim --db catss-slim.db    # 25 MB
+catss build --slim --db catss-slim.db    # ~94 MB
+
+# 3. (optional) split the slim db into shippable artifacts:
+#    base  = alignment only (~28 MB), morph = LXX morphology (~67 MB)
+catss split --db catss-slim.db --base catss.sqlite --morph catss_morph.sqlite
 ```
 
 Pre-built databases are also available as
@@ -38,8 +42,9 @@ prefer not to run the build yourself.
 ```bash
 catss verse gen 1 1
 catss verse ruth 1 1 --format json
-catss lemma בְּרֵאשִׁית
-catss greek A)RXH=|   # BETA-coded
+catss lemma κύριος          # LXX lemma, Unicode...
+catss lemma "KU/RIOS"       # ...or BETA-coded (full builds only)
+catss books
 ```
 
 Python:
@@ -47,9 +52,13 @@ Python:
 ```python
 from catss import query
 
-verse = query.lookup_verse("ruth", 1, 1)
+q = query.CATSS()                       # finds ./catss.db by default
+verse = q.lookup_verse("ruth", 1, 1)
 for pair in verse.alignments:
-    print(pair.mt_unicode, "↔", pair.lxx_unicode, pair.note)
+    print(pair.mt_unicode, "↔", pair.lxx_unicode, pair.notes)
+
+for hit in q.search_lemma("κύριος", limit=10):
+    print(hit.ref, hit.surface_unicode, hit.parse_code)
 ```
 
 LXX morphology rows index words by their position within the verse, so
@@ -64,11 +73,18 @@ always query using the composite key `(book, chapter, verse, position)`.
   handful of Psalms. Workaround: normalize upstream, or use the LXX verse
   number shown in `[ ]` markup.
 - **Hebrew text is consonantal only.** CATSS ships the unvocalized
-  Michigan-Claremont BHS text; accent numeric codes are stripped naively
-  and angle-bracket cross-references (`<1.7>` etc.) are not filtered. If
-  you need pointed and accented Hebrew, use the
-  [Open Scriptures Hebrew Bible](https://github.com/openscriptures/morphhb)
+  Michigan-Claremont BHS text; accent numeric codes, angle-bracket
+  cross-references (`<1.7>`), and text-critical apparatus tokens are
+  stripped during decoding. If you need pointed and accented Hebrew, use
+  the [Open Scriptures Hebrew Bible](https://github.com/openscriptures/morphhb)
   or Sefaria's BHS edition instead.
+- **Esther addition subverses are merged.** The LXX Esther additions are
+  versified `1:1a`, `1:1b`, ... in CCAT's morphology; their words merge
+  into the base verse with continued positions (the subverse letter is
+  not preserved).
+- **Superscriptions are verse 0.** Ode/psalm titles and book prefaces
+  (Odes, Psalms of Solomon, EpJer, Lamentations, Bel, OG Daniel) are
+  stored as verse 0 of the chapter they introduce.
 
 ## Data attribution
 

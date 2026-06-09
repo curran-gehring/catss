@@ -163,8 +163,11 @@ def hebrew_to_unicode(beta: str, *, strip_markers: bool = True) -> str:
 
         i += 1
 
+    import re
     import unicodedata
-    return unicodedata.normalize("NFC", _apply_hebrew_finals("".join(out)))
+    result = unicodedata.normalize("NFC", _apply_hebrew_finals("".join(out)))
+    # dropped annotation tokens can leave runs of separator spaces behind
+    return re.sub(r"\s+", " ", result).strip()
 
 
 def _apply_hebrew_finals(s: str) -> str:
@@ -192,16 +195,43 @@ def _apply_hebrew_finals(s: str) -> str:
     return "".join(tokens)
 
 
+def _drop_annotation_tokens(beta: str) -> str:
+    """Drop whitespace-delimited tokens that are apparatus, not text.
+
+    CATSS text is ALL CAPS, so a token is annotation if it contains a
+    lowercase letter (.wy, .dr, q1a, unclosed '<ju8.26' refs...), starts
+    with '.' (note codes like '.()'), or carries text-critical brackets /
+    leftover braces ('[..]K*X*', unclosed '{...L)'). Balanced {...} and
+    <...> groups are removed before tokenization, so any surviving brace
+    is unbalanced apparatus. Their '.' / '(' / ')' would otherwise decode
+    as dagesh / ayin / alef.
+    """
+    import re
+    return " ".join(
+        t for t in beta.split()
+        if not re.search(r"[a-z\[\]{}]", t)
+        and not t.startswith(".")
+        and not t.isdigit()   # bare apparatus numbers ('NKWXH 3 ... 9')
+    )
+
+
 def _strip_catss_markers(beta: str) -> str:
     """Remove CATSS alignment/annotation markup, leaving only MT/LXX text."""
     import re
     # Remove {...X} and {X} annotations
     beta = re.sub(r"\{[^{}]*\}", "", beta)
+    # Remove <1.7>-style cross-references and <sp>-style notes. The '.'
+    # inside them would otherwise be read as a dagesh on the preceding text.
+    beta = re.sub(r"<[^<>]*>", "", beta)
+    beta = _drop_annotation_tokens(beta)
     # Remove leading column-b retroversion markers "= ..." only if caller wants col-a
     # (callers who want col-b use parse_parallel.py directly — don't strip here)
-    # Remove ---, --+, ^^^
-    beta = re.sub(r"-{3,}\+?", "", beta)
+    # Remove ---, --+, --, ^^^. The plus marker is only TWO dashes ('--+'),
+    # so the run length must be 2+, not 3+ — a single '-' (maqqeph) survives.
+    beta = re.sub(r"-{2,}\+?", "", beta)
     beta = beta.replace("^", "")
+    # '' is a CATSS ditto/placeholder mark, not text
+    beta = beta.replace("''", "")
     # Ketiv * / qere ** — drop the marker, keep the text that follows
     beta = re.sub(r"\*\*?", "", beta)
     # Continuation markers and stray punctuation
@@ -330,22 +360,32 @@ def greek_to_unicode(beta: str) -> str:
         # unknown: skip
         i += 1
 
+    import re
     import unicodedata
     result = unicodedata.normalize("NFC", "".join(out))
+    result = re.sub(r"\s+", " ", result).strip()
     return _fix_final_sigma(result)
 
 
 def _fix_final_sigma(s: str) -> str:
     import re
-    # Convert σ to ς at end of word
-    return re.sub(r"σ(?=(\s|$|[^α-ωΑ-Ωϊϋΐΰ]))", "ς", s)
+    # Convert σ to ς at end of word. \w is Unicode-aware and covers ALL
+    # Greek letters including accented/polytonic forms (ά U+03AC, ῳ U+1FF3,
+    # ...). The previous class [α-ωΑ-Ω...] excluded those blocks, so any σ
+    # directly before an accented vowel was wrongly finalized (μέςῳ).
+    return re.sub(r"σ(?!\w)", "ς", s)
 
 
 def _strip_catss_markers_greek(beta: str) -> str:
     import re
     beta = re.sub(r"\{[^{}]*\}", "", beta)
-    beta = re.sub(r"-{3,}\+?", "", beta)
+    beta = re.sub(r"<[^<>]*>", "", beta)
+    beta = re.sub(r"-{2,}\+?", "", beta)
+    beta = _drop_annotation_tokens(beta)
     beta = beta.replace("^", "")
+    # '' is a CATSS ditto/placeholder mark — strip BEFORE the decoder maps
+    # a lone ' (elision) to U+02BC.
+    beta = beta.replace("''", "")
     beta = beta.replace("~", "")
     beta = re.sub(r"\s+", " ", beta).strip()
     return beta

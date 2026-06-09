@@ -118,8 +118,8 @@ def build(raw_root: pathlib.Path, db_path: pathlib.Path, *, slim: bool = False) 
 
     slim: when True, drop BETA columns (mt_beta, mt_col_b_beta, lxx_beta,
           surface_beta, lemma_beta) and run VACUUM at the end. Unicode and
-          annotation flags/notes are preserved. Typical size delta: ~93 MB
-          → ~50 MB. Intended for iOS/mobile bundling.
+          annotation flags/notes are preserved. Typical size delta: ~114 MB
+          → ~94 MB. Intended for iOS/mobile bundling (see `catss split`).
     """
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if db_path.exists():
@@ -213,8 +213,14 @@ def _load_parallel(conn: sqlite3.Connection, par_dir: pathlib.Path, stats: dict)
                         row.mt_col_a or None,
                         row.mt_col_b,
                         row.lxx_raw or None,
-                        hebrew_to_unicode(row.mt_col_a) if row.mt_col_a else None,
-                        greek_to_unicode(row.lxx_raw) if row.lxx_raw else None,
+                        # `or None`: marker-only cells ('--+', '---', "''")
+                        # decode to "" — store NULL, not empty/garbage text.
+                        # Plus rows have NO MT counterpart by definition:
+                        # anything after '--+' is annotation/retroversion
+                        # (kept raw in mt_beta / mt_col_b_beta), never MT.
+                        None if row.is_lxx_plus
+                        else (hebrew_to_unicode(row.mt_col_a) or None) if row.mt_col_a else None,
+                        (greek_to_unicode(row.lxx_raw) or None) if row.lxx_raw else None,
                         int(row.is_lxx_minus),
                         int(row.is_lxx_plus),
                         int(row.is_ketiv),
@@ -224,6 +230,24 @@ def _load_parallel(conn: sqlite3.Connection, par_dir: pathlib.Path, stats: dict)
                     ),
                 )
                 stats["alignments"] += 1
+
+
+def _morph_book_remap(stem: str, book_id: int, chapter: int) -> tuple[int, int]:
+    """
+    Two CCAT .mlxx files pack content belonging to a different canonical
+    book than the one the file is registered under:
+
+      19.2Esdras — Greek 2 Esdras = Ezra (ch 1-10) + Nehemiah (ch 11-23,
+                   Neh 1 = 2Esd 11). Without the split, Nehemiah had zero
+                   morphology and Ezra grew 13 phantom chapters.
+      29.Psalms2 — ends with Ps 151, which the .par side registers as its
+                   own book (Ps151, single chapter).
+    """
+    if stem == "19.2Esdras" and chapter >= 11:
+        return bookreg.by_osis("Neh").canon_id, chapter - 10
+    if stem == "29.Psalms2" and chapter == 151:
+        return bookreg.by_osis("Ps151").canon_id, 1
+    return book_id, chapter
 
 
 def _load_lxxmorph(conn: sqlite3.Connection, mlxx_dir: pathlib.Path, stats: dict) -> None:
@@ -236,16 +260,24 @@ def _load_lxxmorph(conn: sqlite3.Connection, mlxx_dir: pathlib.Path, stats: dict
                 continue
             print(f"  lxxmorph: {path.name}", file=sys.stderr)
             for mverse in parse_lxxmorph.parse_file(path):
-                verse_id = _ensure_verse(conn, b.canon_id, mverse.chapter, mverse.verse)
+                book_id, chapter = _morph_book_remap(stem, b.canon_id, mverse.chapter)
+                verse_id = _ensure_verse(conn, book_id, chapter, mverse.verse)
+                # Esther's addition subverses (1:1a, 1:1b, ...) arrive as
+                # separate parsed verses that merge into one (ch, v) — their
+                # positions must continue, not restart at 1.
+                start_pos = conn.execute(
+                    "SELECT COALESCE(MAX(position), 0) FROM lxx_morph WHERE verse_id=?",
+                    (verse_id,),
+                ).fetchone()[0]
                 for w in mverse.words:
                     try:
                         conn.execute(
-                            "INSERT OR IGNORE INTO lxx_morph "
+                            "INSERT INTO lxx_morph "
                             "(verse_id, position, surface_beta, surface_unicode, "
                             " parse_code, lemma_beta, lemma_unicode) "
                             "VALUES (?,?,?,?,?,?,?)",
                             (
-                                verse_id, w.position,
+                                verse_id, start_pos + w.position,
                                 w.surface_beta,
                                 greek_to_unicode(w.surface_beta),
                                 w.parse_code or None,

@@ -26,13 +26,13 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--raw", default="raw")
     p_build.add_argument("--db", default="catss.db")
     p_build.add_argument("--slim", action="store_true",
-                         help="drop BETA columns + VACUUM; ~45% smaller db for iOS")
+                         help="drop BETA columns + VACUUM (~114→94 MB); required for `catss split`")
 
     p_split = sub.add_parser(
         "split",
-        help="split a slim db into base (alignment, ~22MB) + morph (~54MB) artifacts")
-    p_split.add_argument("--db", default="catss.db",
-                         help="source slim db (built with --slim, or the shipped catss.sqlite)")
+        help="split a slim db into base (alignment, ~28MB) + morph (~67MB) artifacts")
+    p_split.add_argument("--db", default="catss-slim.db",
+                         help="source SLIM db (built with --slim; full builds are refused)")
     p_split.add_argument("--base", default="catss.sqlite",
                          help="output: alignment-only db to bundle in the app")
     p_split.add_argument("--morph", default="catss_morph.sqlite",

@@ -139,10 +139,12 @@ def _parse_row(line: str, line_no: int) -> AlignmentRow | None:
     # Ketiv/qere are NOT mutually exclusive — a single row can carry
     # both, e.g. `*HWC) **HYC)` (ketiv with a following qere form). Detect
     # each independently. A '*' that's part of '**' must not count for ketiv.
-    _mt_ketiv_probe = re.sub(r"\*\*", "", mt)
+    # Probe col-a ONLY: col-b retroversions carry their own '*' markup
+    # (e.g. `=:?W/...`) which must not flag the MT reading as ketiv/qere.
+    _mt_ketiv_probe = re.sub(r"\*\*", "", mt_a)
     is_ketiv = "*" in _mt_ketiv_probe
-    is_qere = "**" in mt
-    is_transposition = "~~~" in mt or "~~~" in lxx
+    is_qere = "**" in mt_a
+    is_transposition = "~~~" in mt_a or "~~~" in lxx
 
     notes: list[str] = []
     # surface {TAG} flags
@@ -179,19 +181,13 @@ def _split_col_ab(mt: str) -> tuple[str, str | None]:
 
 
 def _find_colb_start(mt: str) -> int:
-    # Look for the first standalone '=' that introduces col-b. It must be
-    # preceded by whitespace and followed by a non-whitespace character.
-    for i, ch in enumerate(mt):
-        if ch != "=":
-            continue
-        if i == 0:
-            continue
-        if not mt[i - 1].isspace():
-            continue
-        if i + 1 < len(mt) and mt[i + 1].isspace():
-            continue
-        return i
-    return -1
+    # '=' is not part of the Hebrew BETA character set, so the FIRST '=' in
+    # the MT cell always introduces col-b — whether at the cell start
+    # (`=%vpa .tn`), after whitespace (`B/YMY =B/`), or glued to annotation
+    # marks (`--+ ''=W/YHYW`, `?=?MWLWT`). The old preceded-by-whitespace
+    # requirement missed the glued forms and their retroversion text leaked
+    # into the col-a decode.
+    return mt.find("=")
 
 
 def _strip_col_b(mt_a: str) -> str:

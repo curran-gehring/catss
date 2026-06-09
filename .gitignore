@@ -16,3 +16,6 @@ catss.db-wal
 
 # CCAT-supplied format docs (subject to CCAT user agreement, kept locally)
 raw/docs/
+catss-slim.db
+catss.sqlite
+catss_morph.sqlite
