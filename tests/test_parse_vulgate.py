@@ -46,15 +46,29 @@ def test_parse_stats_surface_skip_counts(tmp_path):
     p = tmp_path / "vul.tsv"
     p.write_text("\n".join([
         _row("Genesis", "Gn", 1, 1, 1, "In principio."),   # yielded
-        _row("Genesis", "Gn", 1, 1, 1, "In principio."),   # duplicate
+        _row("Genesis", "Gn", 1, 1, 1, "In principio."),   # mapped duplicate
+        _row("Genesis", "Gn", 1, 1, 1, "In principio."),   # mapped duplicate
         _row("Matthaeus", "Mt", 47, 1, 1, "Liber."),       # NT -> unmapped
+        _row("Matthaeus", "Mt", 47, 1, 1, "Liber."),       # NT copy -> unmapped (NOT duplicate)
         "too\tfew\tcols",                                   # malformed
         _row("Genesis", "Gn", 1, "x", "y", "bad ref"),     # malformed
     ]) + "\n", encoding="utf-8")
     stats = {}
-    list(parse_vulgate.parse_file(p, stats=stats))
-    assert stats == {"malformed": 2, "duplicates": 1,
-                     "unmapped": 1, "yielded": 1}
+    n = len(list(parse_vulgate.parse_file(p, stats=stats)))
+    assert n == 1
+    # unmapped copies count as unmapped, not duplicates; buckets are disjoint
+    assert stats == {"malformed": 2, "duplicates": 2,
+                     "unmapped": 2, "yielded": 1}
+    assert stats["duplicates"] == 2 * stats["yielded"]  # clean-x3 invariant
+
+
+def test_extra_columns_preserve_embedded_tab(tmp_path):
+    # A literal tab inside the verse text must keep the whole text, not truncate
+    # it at the 7th column.
+    row = "Genesis\tGn\t1\t1\t1\tIn principio\tcreavit Deus."
+    verses = _parse(tmp_path, row)
+    assert len(verses) == 1
+    assert verses[0].text == "In principio\tcreavit Deus."
 
 
 def test_nt_and_unmapped_dropped(tmp_path):

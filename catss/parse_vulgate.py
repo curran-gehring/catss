@@ -163,11 +163,17 @@ def parse_file(
     Dedups the x3 triplication on the original (vul_book, ch, v) ref. The source
     is supposed to be byte-identical triplicated, so a duplicate ref whose text
     DIFFERS from the one already seen is a corrupt source, not a triplicate:
-    raise rather than silently keep the first and drop the conflict. Malformed
-    lines (wrong column count, non-integer ch/v) and NT/unmapped books are
-    skipped, but their counts are surfaced via the optional `stats` dict
-    (keys: malformed, duplicates, unmapped, yielded) so silent drops can't hide
-    source degradation — fully populated once the generator is consumed.
+    raise rather than silently keep the first and drop the conflict.
+
+    Every source line lands in exactly one disjoint bucket, surfaced via the
+    optional `stats` dict (fully populated once the generator is consumed):
+      malformed  - wrong column count or non-integer ch/v
+      unmapped   - NT / unmapped book (every copy, classified before dedup)
+      duplicates - a repeat of an already-seen MAPPED verse
+      yielded    - first occurrence of a mapped verse (what we emit)
+    so malformed+unmapped+duplicates+yielded == total lines, and for a clean x3
+    source duplicates == 2*yielded. Surfacing them keeps silent drops from
+    hiding source degradation.
     """
     seen: dict[tuple[str, int, int], str] = {}
     counts = {"malformed": 0, "duplicates": 0, "unmapped": 0, "yielded": 0}
@@ -188,7 +194,18 @@ def parse_file(
                 counts["malformed"] += 1
                 continue
             ref = (abbrev, chapter, verse)
-            text = cols[5].strip()
+            # Preserve the whole text field: join cols[5:] so a verse containing
+            # a literal tab is kept intact rather than truncated at the 7th col.
+            text = "\t".join(cols[5:]).strip()
+
+            # Classify mapping BEFORE dedup so the buckets stay disjoint and
+            # meaningful: `unmapped` counts EVERY NT/unmapped line (all 3 copies),
+            # and `duplicates` counts only repeats of a MAPPED verse — so for a
+            # clean x3 source `duplicates == 2 * yielded` is a checkable invariant.
+            mapped = _map_ref(abbrev, chapter, verse)
+            if mapped is None:
+                counts["unmapped"] += 1
+                continue
             if ref in seen:
                 if seen[ref] != text:
                     raise ValueError(
@@ -199,11 +216,6 @@ def parse_file(
                 counts["duplicates"] += 1
                 continue
             seen[ref] = text
-
-            mapped = _map_ref(abbrev, chapter, verse)
-            if mapped is None:
-                counts["unmapped"] += 1
-                continue
             catss_osis, catss_ch, catss_v = mapped
             counts["yielded"] += 1
             yield VulgateVerse(
