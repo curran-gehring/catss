@@ -36,6 +36,12 @@ def _morph_string(token) -> str | None:
     return "|".join(parts) or None
 
 
+def _norm_latin(s: str) -> str:
+    """LatinCy's length-preserving orthographic fold (v->u, j->i), lowercased —
+    the form the lemmatizer falls back to when it can't resolve a headword."""
+    return s.lower().replace("v", "u").replace("j", "i")
+
+
 def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
     """Fill lemma/morph for every vulgate_words row. Returns a stats dict."""
     if not pack_path.exists():
@@ -57,7 +63,8 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
         g = list(grp)
         verses.append(([r[1] for r in g], [r[2] for r in g]))
 
-    stats = {"verses": len(verses), "words": 0, "lemmatized": 0, "mismatches": 0}
+    stats = {"verses": len(verses), "words": 0, "lemmatized": 0,
+             "mismatches": 0, "recased": 0}
 
     texts = (" ".join(words) for _ids, words in verses)
     done = 0
@@ -75,6 +82,21 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
                 di += 1
             if head is not None and acc == target:
                 lemma = head.lemma_ or None
+                # A capitalized (usually verse-initial) verb often gets the
+                # model's fallback self-lemma — the normalized surface — instead
+                # of the real headword (e.g. "Vade"->"uade" not "uado"). When the
+                # lemma of a finite verb is just its own folded surface, re-run
+                # the lowercased surface in isolation and prefer a real (non-self)
+                # lemma. Leaves correct 1sg-present self-lemmas (uideo, uenio)
+                # unchanged, since the retry returns the same form.
+                if lemma and head.pos_ in ("VERB", "AUX") \
+                        and lemma == _norm_latin(wsurf):
+                    retry = nlp(wsurf.lower())
+                    if len(retry):
+                        rlem = retry[0].lemma_
+                        if rlem and rlem != _norm_latin(wsurf):
+                            lemma = rlem
+                            stats["recased"] = stats.get("recased", 0) + 1
                 pack.execute(
                     "UPDATE vulgate_words SET lemma=?, morph=? WHERE id=?",
                     (lemma, _morph_string(head), wid),
@@ -108,7 +130,9 @@ def main(argv: list[str] | None = None) -> int:
     stats = lemmatize(args.pack, args.model)
     print(f"vulgate_words lemmatized: {stats['lemmatized']:,}/{stats['words']:,} "
           f"words across {stats['verses']:,} verses "
-          f"({stats['mismatches']:,} length-mismatch skips)", file=sys.stderr)
+          f"({stats['mismatches']:,} length-mismatch skips, "
+          f"{stats['recased']:,} verb lemmas recovered via lowercased retry)",
+          file=sys.stderr)
     return 0
 
 

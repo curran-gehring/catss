@@ -21,3 +21,10 @@ def test_morph_string_pos_only_when_no_features():
 
 def test_morph_string_none_when_empty():
     assert lv._morph_string(_tok("", "")) is None
+
+
+def test_norm_latin_folds_v_u_j_i_and_lowercases():
+    assert lv._norm_latin("Vade") == "uade"
+    assert lv._norm_latin("ejus") == "eius"
+    assert lv._norm_latin("Judicavit") == "iudicauit"
+    assert lv._norm_latin("terram") == "terram"  # no v/j: lowercase only
