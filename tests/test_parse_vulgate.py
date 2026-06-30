@@ -33,6 +33,30 @@ def test_dedup_triplication(tmp_path):
     assert verses[0].pivot == "mt"
 
 
+def test_conflicting_duplicate_raises(tmp_path):
+    # Same ref, DIFFERENT text = corrupt source, not a triplicate. Fail loud.
+    import pytest
+    a = _row("Genesis", "Gn", 1, 1, 1, "In principio creavit Deus.")
+    b = _row("Genesis", "Gn", 1, 1, 1, "WRONG conflicting text.")
+    with pytest.raises(ValueError, match="conflicting duplicate"):
+        _parse(tmp_path, a, b)
+
+
+def test_parse_stats_surface_skip_counts(tmp_path):
+    p = tmp_path / "vul.tsv"
+    p.write_text("\n".join([
+        _row("Genesis", "Gn", 1, 1, 1, "In principio."),   # yielded
+        _row("Genesis", "Gn", 1, 1, 1, "In principio."),   # duplicate
+        _row("Matthaeus", "Mt", 47, 1, 1, "Liber."),       # NT -> unmapped
+        "too\tfew\tcols",                                   # malformed
+        _row("Genesis", "Gn", 1, "x", "y", "bad ref"),     # malformed
+    ]) + "\n", encoding="utf-8")
+    stats = {}
+    list(parse_vulgate.parse_file(p, stats=stats))
+    assert stats == {"malformed": 2, "duplicates": 1,
+                     "unmapped": 1, "yielded": 1}
+
+
 def test_nt_and_unmapped_dropped(tmp_path):
     verses = _parse(
         tmp_path,

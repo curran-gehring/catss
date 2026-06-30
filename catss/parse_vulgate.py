@@ -155,38 +155,57 @@ def _map_ref(abbrev: str, chapter: int, verse: int) -> tuple[str, int, int] | No
     return (osis, chapter, verse)
 
 
-def parse_file(path: pathlib.Path) -> Iterator[VulgateVerse]:
+def parse_file(
+    path: pathlib.Path, stats: dict | None = None
+) -> Iterator[VulgateVerse]:
     """Yield one VulgateVerse per unique CATSS-mapped verse.
 
-    Dedups the x3 triplication on the original (vul_book, ch, v) ref. Lines
-    for NT / unmapped books are skipped. Malformed lines (wrong column count,
-    non-integer ch/v) are skipped silently rather than aborting the build.
+    Dedups the x3 triplication on the original (vul_book, ch, v) ref. The source
+    is supposed to be byte-identical triplicated, so a duplicate ref whose text
+    DIFFERS from the one already seen is a corrupt source, not a triplicate:
+    raise rather than silently keep the first and drop the conflict. Malformed
+    lines (wrong column count, non-integer ch/v) and NT/unmapped books are
+    skipped, but their counts are surfaced via the optional `stats` dict
+    (keys: malformed, duplicates, unmapped, yielded) so silent drops can't hide
+    source degradation — fully populated once the generator is consumed.
     """
-    seen: set[tuple[str, int, int]] = set()
+    seen: dict[tuple[str, int, int], str] = {}
+    counts = {"malformed": 0, "duplicates": 0, "unmapped": 0, "yielded": 0}
     with path.open(encoding="utf-8") as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, 1):
             line = line.rstrip("\n")
             if not line:
                 continue
             cols = line.split("\t")
             if len(cols) < 6:
+                counts["malformed"] += 1
                 continue
             abbrev = cols[1].strip()
             try:
                 chapter = int(cols[3])
                 verse = int(cols[4])
             except ValueError:
+                counts["malformed"] += 1
                 continue
             ref = (abbrev, chapter, verse)
+            text = cols[5].strip()
             if ref in seen:
+                if seen[ref] != text:
+                    raise ValueError(
+                        f"conflicting duplicate for {abbrev} {chapter}:{verse} "
+                        f"at line {lineno}: {seen[ref]!r} != {text!r} — source "
+                        f"is not the expected byte-identical triplication"
+                    )
+                counts["duplicates"] += 1
                 continue
-            seen.add(ref)
+            seen[ref] = text
 
             mapped = _map_ref(abbrev, chapter, verse)
             if mapped is None:
+                counts["unmapped"] += 1
                 continue
             catss_osis, catss_ch, catss_v = mapped
-            text = cols[5].strip()
+            counts["yielded"] += 1
             yield VulgateVerse(
                 vul_book=abbrev,
                 vul_chapter=chapter,
@@ -197,3 +216,6 @@ def parse_file(path: pathlib.Path) -> Iterator[VulgateVerse]:
                 pivot=bookreg.vulgate_pivot(catss_osis),
                 text=text,
             )
+    # Populated once the generator is fully consumed (build() iterates to end).
+    if stats is not None:
+        stats.update(counts)

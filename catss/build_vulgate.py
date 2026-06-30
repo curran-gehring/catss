@@ -112,9 +112,10 @@ def build(raw_root: pathlib.Path, catss_db: pathlib.Path, pack_path: pathlib.Pat
         "words": 0,
         "by_pivot": {"mt": 0, "lxx": 0},
         "orphans_by_book": {},
+        "parse": {},          # malformed / duplicates / unmapped / yielded
     }
 
-    for vv in parse_vulgate.parse_file(vul_tsv):
+    for vv in parse_vulgate.parse_file(vul_tsv, stats=stats["parse"]):
         catss_verse_id = catss_index.get(
             (vv.catss_osis, vv.catss_chapter, vv.catss_verse)
         )
@@ -175,6 +176,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  words:    {stats['words']:,}", file=sys.stderr)
     print(f"  pivot:    mt={stats['by_pivot'].get('mt', 0):,}  "
           f"lxx={stats['by_pivot'].get('lxx', 0):,}", file=sys.stderr)
+    p = stats["parse"]
+    print(f"  source:   {p.get('yielded', 0):,} mapped, "
+          f"{p.get('duplicates', 0):,} triplicate dupes dropped, "
+          f"{p.get('unmapped', 0):,} NT/unmapped skipped, "
+          f"{p.get('malformed', 0):,} malformed skipped", file=sys.stderr)
     if stats["orphans_by_book"]:
         worst = sorted(stats["orphans_by_book"].items(),
                        key=lambda kv: -kv[1])
