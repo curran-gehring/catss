@@ -2,15 +2,20 @@
 Backfill vulgate_words.lemma and .morph with LatinCy. **Runs on the mac-mini**
 (needs spaCy + the `la_core_web_lg` model).
 
-We feed the model our already-stored token surfaces (not the raw text) as a
-pre-tokenized Doc, so the tagger / morphologizer / lemmatizer run with verse
-context. The LatinCy pipeline normalizes v->u / j->i (length-preserving) and
-includes an EncliticSplitter that splits a trailing -que/-ne/-ve into its own
-token (e.g. "Dixitque" -> "Dixit"+"que"). That makes the processed Doc longer
-than our word list, so we re-merge by character length: each stored word maps
-to one-or-more consecutive Doc tokens, and we take the lemma/morph of the head
-(first) sub-token — the main word, with the enclitic following. lemma is the
-predicted lemma; morph packs UPOS + the UD feature string
+We run the FULL native pipeline on cleaned verse text (our stored surfaces
+joined by spaces), not a pre-tokenized Doc: LatinCy's normalizer (v->u, j->i)
+runs during tokenization, and the lemmatizer needs that normalized form — a
+pre-tokenized Doc skips it and mislemmatizes (e.g. "creavit"->"creauit" instead
+of "creo", "ejus"->"js" instead of "is").
+
+The normalizer is length-preserving and the EncliticSplitter splits a trailing
+-que/-ne/-ve into its own token ("Dixitque" -> "Dixit"+"que"), so the Doc has
+>= our word count. We re-merge by character length: each stored word maps to
+one-or-more consecutive Doc tokens, and we take the lemma/morph of the head
+(first) sub-token — the main word, with the enclitic following. Because our
+surfaces carry no punctuation and are space-joined, the tokenizer never crosses
+a word boundary, so the lengths line up exactly. lemma is the predicted lemma;
+morph packs UPOS + the UD feature string
 (e.g. "VERB|Mood=Ind|Number=Sing|Person=3|Tense=Pres").
 """
 from __future__ import annotations
@@ -37,7 +42,6 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
         raise FileNotFoundError(f"missing Vulgate pack: {pack_path}")
 
     import spacy
-    from spacy.tokens import Doc
 
     nlp = spacy.load(model)
 
@@ -55,45 +59,35 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
 
     stats = {"verses": len(verses), "words": 0, "lemmatized": 0, "mismatches": 0}
 
-    def _run(docs):
-        for _name, proc in nlp.pipeline:
-            # Neural components batch via .pipe; rule components like
-            # EncliticSplitter are plain callables and run per-doc.
-            if hasattr(proc, "pipe"):
-                docs = list(proc.pipe(docs))
+    texts = (" ".join(words) for _ids, words in verses)
+    done = 0
+    for (word_ids, words), doc in zip(verses, nlp.pipe(texts, batch_size=CHUNK)):
+        dtoks = [t for t in doc if not t.is_space and t.text.strip()]
+        di = 0
+        for wid, wsurf in zip(word_ids, words):
+            head = dtoks[di] if di < len(dtoks) else None
+            # consume one-or-more sub-tokens until their (length-preserving,
+            # normalized) text covers this word — EncliticSplitter may split it
+            acc = 0
+            target = len(wsurf)
+            while di < len(dtoks) and acc < target:
+                acc += len(dtoks[di].text)
+                di += 1
+            if head is not None and acc == target:
+                lemma = head.lemma_ or None
+                pack.execute(
+                    "UPDATE vulgate_words SET lemma=?, morph=? WHERE id=?",
+                    (lemma, _morph_string(head), wid),
+                )
+                if lemma:
+                    stats["lemmatized"] += 1
             else:
-                docs = [proc(d) for d in docs]
-        return docs
-
-    for start in range(0, len(verses), CHUNK):
-        chunk = verses[start:start + CHUNK]
-        docs = _run([Doc(nlp.vocab, words=words) for _ids, words in chunk])
-        for (word_ids, words), doc in zip(chunk, docs):
-            dtoks = list(doc)
-            di = 0
-            for wid, wsurf in zip(word_ids, words):
-                head = dtoks[di] if di < len(dtoks) else None
-                # consume one-or-more sub-tokens until their text length covers
-                # this word (EncliticSplitter may have split it)
-                acc = 0
-                target = len(wsurf)
-                while di < len(dtoks) and acc < target:
-                    acc += len(dtoks[di].text)
-                    di += 1
-                if head is not None and acc == target:
-                    lemma = head.lemma_ or None
-                    pack.execute(
-                        "UPDATE vulgate_words SET lemma=?, morph=? WHERE id=?",
-                        (lemma, _morph_string(head), wid),
-                    )
-                    if lemma:
-                        stats["lemmatized"] += 1
-                else:
-                    # length desync (rare): leave lemma/morph NULL, resync at di
-                    stats["mismatches"] += 1
-                stats["words"] += 1
-        print(f"  lemmatized {min(start + CHUNK, len(verses)):,}/"
-              f"{len(verses):,} verses", file=sys.stderr)
+                # length desync (rare): leave lemma/morph NULL, resync next word
+                stats["mismatches"] += 1
+            stats["words"] += 1
+        done += 1
+        if done % 5000 == 0:
+            print(f"  lemmatized {done:,}/{len(verses):,} verses", file=sys.stderr)
 
     pack.commit()
     pack.close()
