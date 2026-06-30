@@ -139,3 +139,35 @@ def all_mlxx_stems() -> list[str]:
 
 def all_books() -> tuple[Book, ...]:
     return _BOOKS
+
+
+# ---------------------------------------------------------------------------
+# Vulgate alignment pivot
+# ---------------------------------------------------------------------------
+# Which CATSS column the Latin Vulgate word-aligns against. Jerome rendered
+# most of the OT from the Hebrew (the *Hebraica veritas*) -> pivot 'mt'. But
+# the Gallican Psalter — the Psalms carried by the Clementine / liturgical
+# Vulgate — and the deuterocanonical / Greek-only material descend from the
+# LXX -> pivot 'lxx' (and follow LXX versification, e.g. Psalm numbering).
+#
+# Latin links to this ONE pivot; the counterpart language is then reached
+# transitively through the existing hand-curated MT<->LXX `alignments` rows,
+# so we never run two independent (noisy) alignments per book.
+_VULGATE_LXX_PIVOT: frozenset[str] = frozenset({
+    "Ps",      # Gallican Psalter: LXX/Hexapla base, LXX numbering
+    "Ps151",
+    "1Esd",    # Vulgate appendix "3 Esdras" = Greek 1 Esdras
+    "Sir", "Bar", "EpJer", "Jdt", "TobBA", "TobS",
+    "1Macc", "2Macc",
+    "Wis",
+    "SusOG", "SusTh", "BelOG", "BelTh",
+    # NOT in the Vulgate canon (3Macc/4Macc/Odes/PsSol/DanOG): no Latin to
+    # align — coverage filtering drops them at build time regardless of pivot.
+})
+
+
+def vulgate_pivot(osis: str) -> str:
+    """Return 'lxx' if the Vulgate form of this book descends from the Greek,
+    else 'mt'. Books the Vulgate lacks still return a value, but receive no
+    Latin rows at build time (the verse-coverage filter drops them)."""
+    return "lxx" if osis in _VULGATE_LXX_PIVOT else "mt"

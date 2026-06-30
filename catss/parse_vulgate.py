@@ -1,0 +1,241 @@
+"""
+Parser for the Clementine Latin Vulgate TSV (raw/vulgate/vul.tsv).
+
+Source: theunpleasantowl/vul-complete `vul.tsv` (archived 2026-03; text from
+the Clementine Text Project = public domain). One row per verse:
+
+    fullLatinName \t abbrev \t book# \t chapter \t verse \t text
+
+Two things make this file CATSS-specific:
+
+  1. **Triplication.** Every verse is emitted three times, byte-identical
+     (107,427 lines = 3 x 35,809 unique verses). We dedup on the (abbrev,
+     chapter, verse) ref and keep the first occurrence.
+
+  2. **Versification splits.** The Vulgate packs material inline that CATSS
+     keys as separate books (see `_map_ref`). Daniel 13/14 are Susanna / Bel;
+     Baruch 6 is the Letter of Jeremiah. We rewrite those refs to the CATSS
+     book so the Latin can later ride the gold MT<->LXX cross-alignment.
+
+NT books and any OT book CATSS does not carry are dropped (no alignment
+target). Each surviving verse is filed under a CATSS book (`catss_osis`) and
+tagged with its alignment pivot ('mt' or 'lxx') via `books.vulgate_pivot`.
+"""
+from __future__ import annotations
+
+import pathlib
+import unicodedata
+from dataclasses import dataclass
+from typing import Iterator
+
+from . import books as bookreg
+
+
+# Vulgate abbrev (col 2 of vul.tsv) -> CATSS osis. Books absent from this map
+# (the entire NT: Mt, Mc, Lc, Jo, Act, Rom ... Apc) have no CATSS counterpart
+# and are dropped. Note 1Esd/Ps151 are NOT here: this Clementine edition has
+# no separate 3-Esdras and stops at Ps 150, so neither receives Latin.
+_VUL_TO_CATSS: dict[str, str] = {
+    "Gn": "Gen", "Ex": "Exod", "Lv": "Lev", "Nm": "Num", "Dt": "Deut",
+    "Jos": "Josh", "Jdc": "Judg", "Rt": "Ruth",
+    "1Rg": "1Sam", "2Rg": "2Sam", "3Rg": "1Kgs", "4Rg": "2Kgs",
+    "1Par": "1Chr", "2Par": "2Chr",
+    "Esr": "Ezra", "Neh": "Neh",
+    "Tob": "TobBA",   # Jerome's Latin Tobit vs Greek B/A: same book, divergent
+    "Jdt": "Jdt", "Est": "Esth", "Job": "Job",
+    "Ps": "Ps", "Pr": "Prov", "Ecl": "Eccl", "Ct": "Song",
+    "Sap": "Wis", "Sir": "Sir",
+    "Is": "Isa", "Jr": "Jer", "Lam": "Lam",
+    "Bar": "Bar",     # ch 6 -> EpJer (see _map_ref)
+    "Ez": "Ezek",
+    "Dn": "Dan",      # ch 13 -> SusTh, ch 14 -> BelTh (see _map_ref)
+    "Os": "Hos", "Joel": "Joel", "Am": "Amos", "Abd": "Obad",
+    "Jon": "Jonah", "Mch": "Mic", "Nah": "Nah", "Hab": "Hab",
+    "Soph": "Zeph", "Agg": "Hag", "Zach": "Zech", "Mal": "Mal",
+    "1Mcc": "1Macc", "2Mcc": "2Macc",
+}
+
+
+@dataclass(frozen=True)
+class VulgateVerse:
+    vul_book: str        # original Vulgate abbrev, e.g. "Dn"
+    vul_chapter: int
+    vul_verse: int
+    catss_osis: str      # CATSS book the Latin is filed under
+    catss_chapter: int
+    catss_verse: int
+    pivot: str           # 'mt' | 'lxx'
+    text: str
+
+
+# Ligatures the Clementine edition uses; folded so a word reads the same way
+# everywhere it appears (alignment groups by exact token form).
+_LIGATURES = str.maketrans({
+    "æ": "ae", "Æ": "ae", "œ": "oe", "Œ": "oe",
+})
+
+
+def tokenize_latin(text: str) -> list[tuple[str, str]]:
+    """Split a Clementine Latin verse into (surface, norm) word tuples.
+
+    surface keeps the printed form (ligatures folded, accents stripped, outer
+    punctuation removed); norm is surface lowercased — the form eflomal aligns
+    on, so the same word maps to one vocabulary item regardless of case or
+    sentence punctuation. Bracket/editorial markers (`< >` round Vulgate
+    superscriptions, `[ ]`) and bare punctuation tokens (`:` `.`) drop out.
+    """
+    # Decompose + drop combining accents FIRST so precomposed accented
+    # ligatures (e.g. "ǽ" = æ+acute) reduce to a bare "æ", then fold ligatures.
+    # Order matters: folding first would miss the æ hidden inside "ǽ".
+    decomposed = unicodedata.normalize("NFD", text)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    folded = stripped.translate(_LIGATURES)
+
+    out: list[tuple[str, str]] = []
+    for raw in folded.split():
+        # Strip every leading/trailing char that is not a Latin letter; this
+        # removes attached punctuation ("terram." , "Babylone,") and bare
+        # marks (":", "<", "]") while keeping intra-word letters.
+        word = raw.strip(".,:;!?()[]<>«»\"'`-—–*/{}=")
+        if not word or not any(c.isalpha() for c in word):
+            continue
+        out.append((word, word.lower()))
+    return out
+
+
+def _map_ref(abbrev: str, chapter: int, verse: int) -> tuple[str, int, int] | None:
+    """Rewrite a Vulgate (abbrev, ch, v) ref to its CATSS (osis, ch, v), or
+    None if the book has no CATSS counterpart.
+
+    The Vulgate stores three deuterocanonical units inline that CATSS keys as
+    standalone books. We split them out here so the verse map points at the
+    book CATSS actually aligns:
+
+      - Daniel 13 = Susanna           -> SusTh (Theodotion), one chapter
+      - Daniel 14 = Bel and the Dragon -> BelTh (Theodotion), one chapter
+      - Baruch 6  = Letter of Jeremiah -> EpJer, one chapter
+
+    Daniel 1-12 (incl. the ch-3 Prayer of Azariah / Song of the Three, which
+    Theodotion also carries inline) stays Daniel. Esther needs no split: its
+    Greek additions (Vulgate ch 11-16, and 10:4+) simply have no verse in the
+    CATSS Hebrew Esther (ch 1-10 only), so they resolve to no pivot downstream
+    while keeping their Latin text.
+    """
+    osis = _VUL_TO_CATSS.get(abbrev)
+    if osis is None:
+        return None
+    if osis == "Dan":
+        if chapter == 13:
+            return ("SusTh", 1, verse)       # Susanna: direct (Vulg 13:65 has no Th v65)
+        if chapter == 14:
+            # Bel: Theodotion v1 is the Astyages/Cyrus prologue the Vulgate
+            # omits, so the whole book is shifted +1 (verified exact end to
+            # end: Vulg 14:1 = BelTh 2 ... 14:41 = BelTh 42). Vulg 14:42 (a
+            # closing royal proclamation Theodotion lacks) orphans at BelTh 43.
+            return ("BelTh", 1, verse + 1)
+        return ("Dan", chapter, verse)
+    if osis == "Bar" and chapter == 6:
+        return ("EpJer", 1, verse)
+    # Joel & Malachi carry the classic Latin-vs-Hebrew chapter division. CATSS
+    # follows MT (BHS) versification; the Clementine Vulgate uses the older
+    # Latin one. These are exact, whole-block shifts (verified against the
+    # CATSS verse counts) — without them an entire chapter of each book would
+    # orphan. Sporadic single-verse drift in other books (Num 16/17, Sirach,
+    # Tobit, Judith) is left to orphan: no clean closed-form remap exists.
+    if osis == "Joel":
+        if chapter == 2 and verse >= 28:
+            return ("Joel", 3, verse - 27)   # Vulg 2:28-32 -> MT 3:1-5
+        if chapter == 3:
+            return ("Joel", 4, verse)        # Vulg ch 3 -> MT ch 4
+        return ("Joel", chapter, verse)
+    if osis == "Mal":
+        if chapter == 4:
+            return ("Mal", 3, verse + 18)    # Vulg 4:1-6 -> MT 3:19-24
+        return ("Mal", chapter, verse)
+    return (osis, chapter, verse)
+
+
+def parse_file(
+    path: pathlib.Path, stats: dict | None = None
+) -> Iterator[VulgateVerse]:
+    """Yield one VulgateVerse per unique CATSS-mapped verse.
+
+    Dedups the x3 triplication on the original (vul_book, ch, v) ref. The source
+    is supposed to be byte-identical triplicated, so a duplicate ref whose FULL
+    record (the whole tab-separated line, every column) differs from the one
+    already seen is a corrupt source, not a triplicate: raise rather than
+    silently keep the first and drop the conflict.
+
+    Every source line lands in exactly one disjoint bucket, surfaced via the
+    optional `stats` dict (fully populated once the generator is consumed):
+      malformed  - wrong column count (incl. blank lines) or non-integer ch/v
+      unmapped   - NT / unmapped book (every copy, classified before dedup)
+      duplicates - a repeat of an already-seen MAPPED verse
+      yielded    - first occurrence of a mapped verse (what we emit)
+    so malformed+unmapped+duplicates+yielded == total lines, and for a clean x3
+    source duplicates == 2*yielded. Surfacing them keeps silent drops from
+    hiding source degradation.
+    """
+    seen: dict[tuple[str, int, int], str] = {}
+    counts = {"malformed": 0, "duplicates": 0, "unmapped": 0, "yielded": 0}
+    with path.open(encoding="utf-8") as fh:
+        for lineno, line in enumerate(fh, 1):
+            line = line.rstrip("\n")
+            cols = line.split("\t")
+            if len(cols) < 6:
+                # Too few columns — includes blank/whitespace-only lines, which
+                # split to a single field. Counted as malformed so EVERY source
+                # line lands in a bucket (nothing dropped silently).
+                counts["malformed"] += 1
+                continue
+            abbrev = cols[1].strip()
+            try:
+                chapter = int(cols[3])
+                verse = int(cols[4])
+            except ValueError:
+                counts["malformed"] += 1
+                continue
+            ref = (abbrev, chapter, verse)
+            # Byte-preserving: join cols[5:] so a literal tab inside the verse is
+            # kept, and do NOT strip — the row's newline is already gone, and
+            # stripping would hide whitespace-only conflicts between triplicates
+            # and persist a value different from the source field. Display-layer
+            # trimming is the reader's concern, not the ingest's.
+            text = "\t".join(cols[5:])
+
+            # Classify mapping BEFORE dedup so the buckets stay disjoint and
+            # meaningful: `unmapped` counts EVERY NT/unmapped line (all 3 copies),
+            # and `duplicates` counts only repeats of a MAPPED verse — so for a
+            # clean x3 source `duplicates == 2 * yielded` is a checkable invariant.
+            mapped = _map_ref(abbrev, chapter, verse)
+            if mapped is None:
+                counts["unmapped"] += 1
+                continue
+            if ref in seen:
+                # Compare the WHOLE source record (every column, byte-exact), not
+                # just the verse text, so drift in fullLatinName / book# / numeric
+                # spacing between triplicates is caught too, not silently accepted.
+                if seen[ref] != line:
+                    raise ValueError(
+                        f"conflicting duplicate for {abbrev} {chapter}:{verse} "
+                        f"at line {lineno}: {seen[ref]!r} != {line!r} — source "
+                        f"is not the expected byte-identical triplication"
+                    )
+                counts["duplicates"] += 1
+                continue
+            seen[ref] = line
+            catss_osis, catss_ch, catss_v = mapped
+            counts["yielded"] += 1
+            yield VulgateVerse(
+                vul_book=abbrev,
+                vul_chapter=chapter,
+                vul_verse=verse,
+                catss_osis=catss_osis,
+                catss_chapter=catss_ch,
+                catss_verse=catss_v,
+                pivot=bookreg.vulgate_pivot(catss_osis),
+                text=text,
+            )
+    # Populated once the generator is fully consumed (build() iterates to end).
+    if stats is not None:
+        stats.update(counts)
