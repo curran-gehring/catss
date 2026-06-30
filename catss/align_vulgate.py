@@ -16,7 +16,8 @@ through CATSS's existing alignment rows. So:
 
 eflomal runs once per pivot over the whole corpus, producing forward and
 reverse links (both in source-target orientation). We symmetrize with
-grow-diag-final-and; intersection links get confidence 1.0, grown links 0.5.
+grow-diag-final (OR final pass); intersection links get confidence 1.0,
+grown links 0.5.
 
   vulgate_align
     id              INTEGER PRIMARY KEY
