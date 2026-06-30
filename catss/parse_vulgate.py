@@ -161,9 +161,10 @@ def parse_file(
     """Yield one VulgateVerse per unique CATSS-mapped verse.
 
     Dedups the x3 triplication on the original (vul_book, ch, v) ref. The source
-    is supposed to be byte-identical triplicated, so a duplicate ref whose text
-    DIFFERS from the one already seen is a corrupt source, not a triplicate:
-    raise rather than silently keep the first and drop the conflict.
+    is supposed to be byte-identical triplicated, so a duplicate ref whose FULL
+    record (the whole tab-separated line, every column) differs from the one
+    already seen is a corrupt source, not a triplicate: raise rather than
+    silently keep the first and drop the conflict.
 
     Every source line lands in exactly one disjoint bucket, surfaced via the
     optional `stats` dict (fully populated once the generator is consumed):
@@ -211,15 +212,18 @@ def parse_file(
                 counts["unmapped"] += 1
                 continue
             if ref in seen:
-                if seen[ref] != text:
+                # Compare the WHOLE source record (every column, byte-exact), not
+                # just the verse text, so drift in fullLatinName / book# / numeric
+                # spacing between triplicates is caught too, not silently accepted.
+                if seen[ref] != line:
                     raise ValueError(
                         f"conflicting duplicate for {abbrev} {chapter}:{verse} "
-                        f"at line {lineno}: {seen[ref]!r} != {text!r} — source "
+                        f"at line {lineno}: {seen[ref]!r} != {line!r} — source "
                         f"is not the expected byte-identical triplication"
                     )
                 counts["duplicates"] += 1
                 continue
-            seen[ref] = text
+            seen[ref] = line
             catss_osis, catss_ch, catss_v = mapped
             counts["yielded"] += 1
             yield VulgateVerse(

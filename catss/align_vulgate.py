@@ -197,7 +197,16 @@ def _gdf(fwd: list[tuple[int, int]], rev: list[tuple[int, int]],
     free — drops a union link whenever its counterpart position is already
     taken, costing real recall; we use the standard OR final.)
     """
-    e2f, f2e = set(fwd), set(rev)
+    # Filter to in-bounds links up front so EVERY downstream set (intersection
+    # seed, union, and the final pass) is guaranteed valid as a list index into
+    # latin_ids / tgt_ids — a malformed or out-of-range eflomal link is dropped
+    # rather than crashing align() or negative-indexing the wrong token. Real
+    # eflomal output is always in range, so this is a no-op guard on live data.
+    def _ok(p):
+        i, j = p
+        return 0 <= i < n_src and 0 <= j < n_trg
+    e2f = {p for p in fwd if _ok(p)}
+    f2e = {p for p in rev if _ok(p)}
     union = e2f | f2e
     align: dict[tuple[int, int], str] = {p: "intersection" for p in (e2f & f2e)}
     aligned_src = {i for i, _ in align}

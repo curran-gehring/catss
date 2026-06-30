@@ -82,6 +82,16 @@ def test_verse_text_is_byte_preserving(tmp_path):
     assert verses[0].text == "  In principio.  "
 
 
+def test_duplicate_conflict_on_non_text_column_raises(tmp_path):
+    # Same (abbrev, ch, v) and same verse text, but a different fullLatinName
+    # (col 0) — still a corrupt triplicate, caught by full-record comparison.
+    import pytest
+    a = _row("Genesis", "Gn", 1, 1, 1, "In principio.")
+    b = _row("GENESIS-DRIFT", "Gn", 1, 1, 1, "In principio.")
+    with pytest.raises(ValueError, match="conflicting duplicate"):
+        _parse(tmp_path, a, b)
+
+
 def test_whitespace_only_duplicate_conflict_raises(tmp_path):
     # Triplicates differing only by trailing whitespace are NOT byte-identical;
     # the conflict guard must catch them rather than silently keep the first.
