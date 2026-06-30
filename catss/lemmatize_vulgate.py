@@ -42,6 +42,36 @@ def _norm_latin(s: str) -> str:
     return s.lower().replace("v", "u").replace("j", "i")
 
 
+def _word_token_heads(words: list[str], toks: list) -> list:
+    """Map each stored word to its head Doc token, by ABSOLUTE char offset.
+
+    `toks` is the verse's non-space tokens (each exposing `.idx`, the offset into
+    the space-joined `" ".join(words)` text the pipeline ran on). Word k occupies
+    the known span [start, start+len(word_k)); its head is the first token whose
+    `.idx` lands in that span. After each word the cursor is advanced strictly
+    past the word's end, consuming any enclitic sub-tokens (e.g. "que" after
+    "Dixit"), so a token is never reused by a later word and a missed word leaves
+    only itself None — never shifting a following word. Returns a list parallel
+    to `words` (the head token, or None).
+    """
+    starts = []
+    pos = 0
+    for w in words:
+        starts.append(pos)
+        pos += len(w) + 1   # + the single-space separator
+    heads = []
+    ti = 0
+    for w, w_start in zip(words, starts):
+        w_end = w_start + len(w)
+        while ti < len(toks) and toks[ti].idx < w_start:
+            ti += 1
+        heads.append(toks[ti] if ti < len(toks) and toks[ti].idx < w_end
+                     else None)
+        while ti < len(toks) and toks[ti].idx < w_end:
+            ti += 1
+    return heads
+
+
 # Closed-corpus lemma overrides. The Vulgate is a fixed text, so the model's
 # residual failures are fully enumerable: a handful of perfect-system compound
 # verbs that la_core_web_lg self-lemmatizes (returns its own folded surface)
@@ -90,28 +120,9 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
     texts = (" ".join(words) for _ids, words in verses)
     done = 0
     for (word_ids, words), doc in zip(verses, nlp.pipe(texts, batch_size=CHUNK)):
-        # Map each stored word to its head Doc token by ABSOLUTE char offset.
-        # The text we fed is " ".join(words), so word k occupies a known
-        # [start, end) span; token.idx is that token's offset into the same
-        # string (the v->u/j->i fold is length-preserving, so offsets are
-        # exact). The head is the first non-space token starting inside the
-        # word's span; EncliticSplitter sub-tokens (e.g. "que" after "Dixit")
-        # share the span and are skipped. Using absolute offsets — not a running
-        # counter — means a token that fails to land in a word's span leaves
-        # that one word NULL without shifting any later word's mapping.
         toks = [t for t in doc if not t.is_space and t.text.strip()]
-        starts = []
-        pos = 0
-        for w in words:
-            starts.append(pos)
-            pos += len(w) + 1   # + the single-space separator
-        ti = 0
-        for wid, wsurf, w_start in zip(word_ids, words, starts):
-            w_end = w_start + len(wsurf)
-            while ti < len(toks) and toks[ti].idx < w_start:
-                ti += 1
-            head = (toks[ti] if ti < len(toks) and toks[ti].idx < w_end
-                    else None)
+        heads = _word_token_heads(words, toks)
+        for wid, wsurf, head in zip(word_ids, words, heads):
             if head is not None:
                 lemma = head.lemma_ or None
                 # A capitalized (usually verse-initial) verb often gets the

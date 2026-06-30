@@ -10,6 +10,36 @@ def _tok(pos, morph):
     return types.SimpleNamespace(pos_=pos, morph=morph)
 
 
+def _idtok(idx, text=""):
+    return types.SimpleNamespace(idx=idx, text=text)
+
+
+def test_word_token_heads_enclitic_absorbed_into_head_word():
+    # "Dixitque Deus" -> Dixit@0 que@5 Deus@9; "que" belongs to word 0, so it is
+    # NOT picked as the head of word 1.
+    words = ["Dixitque", "Deus"]
+    toks = [_idtok(0, "Dixit"), _idtok(5, "que"), _idtok(9, "Deus")]
+    heads = lv._word_token_heads(words, toks)
+    assert [h.text for h in heads] == ["Dixit", "Deus"]
+
+
+def test_word_token_heads_missing_token_does_not_shift_later_words():
+    # words at spans [0,3) [4,7) [8,11); no token lands in the middle word.
+    words = ["foo", "bar", "baz"]
+    toks = [_idtok(0, "foo"), _idtok(8, "baz")]
+    heads = lv._word_token_heads(words, toks)
+    assert heads[0].text == "foo"
+    assert heads[1] is None            # only the missed word is None
+    assert heads[2].text == "baz"      # the next word still maps correctly
+
+
+def test_word_token_heads_one_to_one():
+    words = ["In", "principio"]
+    toks = [_idtok(0, "In"), _idtok(3, "principio")]
+    assert [h.text for h in lv._word_token_heads(words, toks)] == \
+        ["In", "principio"]
+
+
 def test_morph_string_packs_pos_and_features():
     assert lv._morph_string(_tok("VERB", "Mood=Ind|Tense=Pres")) == \
         "VERB|Mood=Ind|Tense=Pres"
