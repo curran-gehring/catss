@@ -217,8 +217,10 @@ def align(pack_path: pathlib.Path, catss_db: pathlib.Path,
 
     pack = sqlite3.connect(pack_path)
     catss = sqlite3.connect(catss_db)
+    # Drop-and-recreate so a schema change (e.g. a new column) always takes
+    # effect on a re-run; this table is owned entirely by this step.
+    pack.execute("DROP TABLE IF EXISTS vulgate_align")
     pack.executescript(ALIGN_SCHEMA)
-    pack.execute("DELETE FROM vulgate_align")  # idempotent rebuild
 
     stats = {"by_pivot": {}, "links": 0, "intersection": 0, "grown": 0}
 
