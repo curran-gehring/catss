@@ -227,8 +227,8 @@ def align(pack_path: pathlib.Path, catss_db: pathlib.Path,
         if not pairs:
             stats["by_pivot"][pivot] = {"verses": 0, "links": 0}
             continue
-        src_lines = [" ".join(p[1]) for p in pairs]
-        trg_lines = [" ".join(p[3]) for p in pairs]
+        src_lines = [" ".join(p[1]) for p in pairs]   # latin norms
+        trg_lines = [" ".join(p[4]) for p in pairs]   # pivot tokens
         print(f"  eflomal[{pivot}]: {len(pairs):,} verse pairs ...",
               file=sys.stderr)
         fwd, rev = _run_eflomal(src_lines, trg_lines)
