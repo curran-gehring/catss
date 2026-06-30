@@ -113,6 +113,26 @@ def test_reigns_and_paralipomenon_mapping(tmp_path):
     assert _ref(verses[2]) == ("1Chr", 1, 1)
 
 
+def test_tokenize_latin_basic():
+    toks = parse_vulgate.tokenize_latin("In principio creavit Deus cælum et terram.")
+    assert [s for s, _ in toks] == [
+        "In", "principio", "creavit", "Deus", "caelum", "et", "terram"]
+    assert [n for _, n in toks] == [
+        "in", "principio", "creavit", "deus", "caelum", "et", "terram"]
+
+
+def test_tokenize_latin_drops_bare_punctuation_and_brackets():
+    # spaced ':' and the '<...>' superscription brackets must not become tokens
+    toks = parse_vulgate.tokenize_latin("Dixitque Deus : <Fiat> lux.")
+    assert [s for s, _ in toks] == ["Dixitque", "Deus", "Fiat", "lux"]
+
+
+def test_tokenize_latin_folds_ligatures_and_accents():
+    toks = parse_vulgate.tokenize_latin("prǽ œconomus Æthiopiæ")
+    norms = [n for _, n in toks]
+    assert norms == ["prae", "oeconomus", "aethiopiae"]
+
+
 def test_malformed_lines_skipped(tmp_path):
     verses = _parse(
         tmp_path,

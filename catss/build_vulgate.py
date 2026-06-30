@@ -19,9 +19,20 @@ module lands the foundation table:
 
 `catss_verse_id` is the join key into the main catss DB; rows where it is NULL
 (Esther's Greek additions, anything past a CATSS book's verse range) keep their
-Latin text but receive no pivot alignment downstream. The later steps add
-vulgate_words (Latin tokens + LatinCy lemmas) and vulgate_align (eflomal links
-to mt_row / lxx_word via the pivot).
+Latin text but receive no pivot alignment downstream.
+
+  vulgate_words
+    id           INTEGER PRIMARY KEY
+    verse_map_id INTEGER NOT NULL REFERENCES vulgate_verse_map(id)
+    position     INTEGER NOT NULL      -- 1-based word index in the verse
+    surface      TEXT NOT NULL         -- printed Latin form (ligatures folded)
+    norm         TEXT NOT NULL         -- lowercased; the eflomal alignment form
+    lemma        TEXT                  -- filled by the later LatinCy pass
+    morph        TEXT                  -- filled by the later LatinCy pass
+    UNIQUE(verse_map_id, position)
+
+vulgate_align (eflomal links to mt_row / lxx_word via the pivot) is added by
+align_vulgate.py, which runs on the mac-mini where eflomal is built.
 """
 from __future__ import annotations
 
@@ -49,6 +60,19 @@ CREATE TABLE IF NOT EXISTS vulgate_verse_map (
 CREATE INDEX IF NOT EXISTS idx_vvm_catss ON vulgate_verse_map(catss_verse_id);
 CREATE INDEX IF NOT EXISTS idx_vvm_ref
     ON vulgate_verse_map(catss_osis, catss_chapter, catss_verse);
+
+CREATE TABLE IF NOT EXISTS vulgate_words (
+    id           INTEGER PRIMARY KEY,
+    verse_map_id INTEGER NOT NULL REFERENCES vulgate_verse_map(id),
+    position     INTEGER NOT NULL,
+    surface      TEXT NOT NULL,
+    norm         TEXT NOT NULL,
+    lemma        TEXT,
+    morph        TEXT,
+    UNIQUE(verse_map_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_vw_verse ON vulgate_words(verse_map_id, position);
+CREATE INDEX IF NOT EXISTS idx_vw_norm ON vulgate_words(norm);
 """
 
 
@@ -85,6 +109,7 @@ def build(raw_root: pathlib.Path, catss_db: pathlib.Path, pack_path: pathlib.Pat
         "verses": 0,
         "resolved": 0,        # catss_verse_id found
         "orphaned": 0,        # no CATSS counterpart
+        "words": 0,
         "by_pivot": {"mt": 0, "lxx": 0},
         "orphans_by_book": {},
     }
@@ -93,7 +118,7 @@ def build(raw_root: pathlib.Path, catss_db: pathlib.Path, pack_path: pathlib.Pat
         catss_verse_id = catss_index.get(
             (vv.catss_osis, vv.catss_chapter, vv.catss_verse)
         )
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO vulgate_verse_map "
             "(vul_book, vul_chapter, vul_verse, catss_osis, catss_chapter, "
             " catss_verse, catss_verse_id, pivot, text) "
@@ -104,6 +129,15 @@ def build(raw_root: pathlib.Path, catss_db: pathlib.Path, pack_path: pathlib.Pat
                 catss_verse_id, vv.pivot, vv.text,
             ),
         )
+        verse_map_id = cur.lastrowid
+        for pos, (surface, norm) in enumerate(parse_vulgate.tokenize_latin(vv.text), 1):
+            conn.execute(
+                "INSERT INTO vulgate_words "
+                "(verse_map_id, position, surface, norm) VALUES (?,?,?,?)",
+                (verse_map_id, pos, surface, norm),
+            )
+            stats["words"] += 1
+
         stats["verses"] += 1
         stats["by_pivot"][vv.pivot] = stats["by_pivot"].get(vv.pivot, 0) + 1
         if catss_verse_id is None:
@@ -138,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  verses:   {stats['verses']:,}", file=sys.stderr)
     print(f"  resolved: {stats['resolved']:,}  "
           f"orphaned: {stats['orphaned']:,}", file=sys.stderr)
+    print(f"  words:    {stats['words']:,}", file=sys.stderr)
     print(f"  pivot:    mt={stats['by_pivot'].get('mt', 0):,}  "
           f"lxx={stats['by_pivot'].get('lxx', 0):,}", file=sys.stderr)
     if stats["orphans_by_book"]:

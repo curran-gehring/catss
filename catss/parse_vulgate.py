@@ -24,6 +24,7 @@ tagged with its alignment pivot ('mt' or 'lxx') via `books.vulgate_pivot`.
 from __future__ import annotations
 
 import pathlib
+import unicodedata
 from dataclasses import dataclass
 from typing import Iterator
 
@@ -65,6 +66,41 @@ class VulgateVerse:
     catss_verse: int
     pivot: str           # 'mt' | 'lxx'
     text: str
+
+
+# Ligatures the Clementine edition uses; folded so a word reads the same way
+# everywhere it appears (alignment groups by exact token form).
+_LIGATURES = str.maketrans({
+    "æ": "ae", "Æ": "ae", "œ": "oe", "Œ": "oe",
+})
+
+
+def tokenize_latin(text: str) -> list[tuple[str, str]]:
+    """Split a Clementine Latin verse into (surface, norm) word tuples.
+
+    surface keeps the printed form (ligatures folded, accents stripped, outer
+    punctuation removed); norm is surface lowercased — the form eflomal aligns
+    on, so the same word maps to one vocabulary item regardless of case or
+    sentence punctuation. Bracket/editorial markers (`< >` round Vulgate
+    superscriptions, `[ ]`) and bare punctuation tokens (`:` `.`) drop out.
+    """
+    # Decompose + drop combining accents FIRST so precomposed accented
+    # ligatures (e.g. "ǽ" = æ+acute) reduce to a bare "æ", then fold ligatures.
+    # Order matters: folding first would miss the æ hidden inside "ǽ".
+    decomposed = unicodedata.normalize("NFD", text)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    folded = stripped.translate(_LIGATURES)
+
+    out: list[tuple[str, str]] = []
+    for raw in folded.split():
+        # Strip every leading/trailing char that is not a Latin letter; this
+        # removes attached punctuation ("terram." , "Babylone,") and bare
+        # marks (":", "<", "]") while keeping intra-word letters.
+        word = raw.strip(".,:;!?()[]<>«»\"'`-—–*/{}=")
+        if not word or not any(c.isalpha() for c in word):
+            continue
+        out.append((word, word.lower()))
+    return out
 
 
 def _map_ref(abbrev: str, chapter: int, verse: int) -> tuple[str, int, int] | None:
