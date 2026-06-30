@@ -194,9 +194,12 @@ def parse_file(
                 counts["malformed"] += 1
                 continue
             ref = (abbrev, chapter, verse)
-            # Preserve the whole text field: join cols[5:] so a verse containing
-            # a literal tab is kept intact rather than truncated at the 7th col.
-            text = "\t".join(cols[5:]).strip()
+            # Byte-preserving: join cols[5:] so a literal tab inside the verse is
+            # kept, and do NOT strip — the row's newline is already gone, and
+            # stripping would hide whitespace-only conflicts between triplicates
+            # and persist a value different from the source field. Display-layer
+            # trimming is the reader's concern, not the ingest's.
+            text = "\t".join(cols[5:])
 
             # Classify mapping BEFORE dedup so the buckets stay disjoint and
             # meaningful: `unmapped` counts EVERY NT/unmapped line (all 3 copies),

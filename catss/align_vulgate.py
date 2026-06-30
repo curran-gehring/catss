@@ -133,10 +133,22 @@ def _gather_pairs(pack: sqlite3.Connection, catss: sqlite3.Connection, pivot: st
             "SELECT id, norm FROM vulgate_words "
             "WHERE verse_map_id=? ORDER BY position", (verse_map_id,)
         ).fetchall()
-        if not words:
+        # Build the two latin lists in lockstep, collapsing any internal/edge
+        # whitespace in a norm and DROPPING degenerate empty norms from BOTH —
+        # otherwise " ".join(latin_norms) would yield a different token count
+        # than len(latin_ids), and eflomal's indices would attach links to the
+        # wrong Latin word. Real norms (from tokenize_latin) are single
+        # non-empty tokens, so this is a no-op guard on current data.
+        latin_ids: list[int] = []
+        latin_norms: list[str] = []
+        for wid, norm in words:
+            tok = "".join((norm or "").split())
+            if not tok:
+                continue
+            latin_ids.append(wid)
+            latin_norms.append(tok)
+        if not latin_ids:
             continue
-        latin_ids = [w[0] for w in words]
-        latin_norms = [w[1] for w in words]
         toks, tgt_ids, tgt_subs = _pivot_tokens(catss, pivot, catss_verse_id)
         if not toks:
             continue

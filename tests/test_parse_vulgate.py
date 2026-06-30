@@ -71,6 +71,24 @@ def test_extra_columns_preserve_embedded_tab(tmp_path):
     assert verses[0].text == "In principio\tcreavit Deus."
 
 
+def test_verse_text_is_byte_preserving(tmp_path):
+    # Leading/trailing whitespace in the text field is preserved (only the row
+    # newline is removed) — ingestion is byte-faithful to the source field.
+    row = "Genesis\tGn\t1\t1\t1\t  In principio.  "
+    verses = _parse(tmp_path, row)
+    assert verses[0].text == "  In principio.  "
+
+
+def test_whitespace_only_duplicate_conflict_raises(tmp_path):
+    # Triplicates differing only by trailing whitespace are NOT byte-identical;
+    # the conflict guard must catch them rather than silently keep the first.
+    import pytest
+    a = "Genesis\tGn\t1\t1\t1\tIn principio."
+    b = "Genesis\tGn\t1\t1\t1\tIn principio.  "
+    with pytest.raises(ValueError, match="conflicting duplicate"):
+        _parse(tmp_path, a, b)
+
+
 def test_nt_and_unmapped_dropped(tmp_path):
     verses = _parse(
         tmp_path,
