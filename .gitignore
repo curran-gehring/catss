@@ -6,6 +6,7 @@ __pycache__/
 raw/parallel/*.par
 raw/lxxmorph/*.mlxx
 raw/morph/*.mlxx
+raw/vulgate/
 build/
 dist/
 catss.db
