@@ -42,6 +42,27 @@ def _norm_latin(s: str) -> str:
     return s.lower().replace("v", "u").replace("j", "i")
 
 
+# Closed-corpus lemma overrides. The Vulgate is a fixed text, so the model's
+# residual failures are fully enumerable: a handful of perfect-system compound
+# verbs that la_core_web_lg self-lemmatizes (returns its own folded surface)
+# even after the lowercased retry. Each target below is the SAME headword the
+# model already assigns to other (present/imperfect/future) inflections of that
+# verb elsewhere in this pack — e.g. it lemmatizes "projecit"->"proicio" but
+# "projecerim"->"proiecerim" — so the override only makes these stragglers
+# consistent with the model's own output; it introduces no outside authority.
+# Keys are the _norm_latin-folded surface; the comment cites a sibling form the
+# model lemmatized correctly to the same target.
+_LEMMA_OVERRIDES = {
+    "iustificasti": "iustifico",  # cf. justificabitur, justificetur -> iustifico
+    "proiecerim":   "proicio",    # cf. projecit, projeci            -> proicio
+    "proieceram":   "proicio",
+    "euulsero":     "euello",     # cf. evellet, evellam             -> euello
+    "eieceram":     "eicio",      # cf. ejecit, ejecerunt            -> eicio
+    "deiecerint":   "deicio",     # cf. dejecit, dejecisti           -> deicio
+    "accersiuit":   "accerso",    # cf. accersitis, accersito        -> accerso
+}
+
+
 def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
     """Fill lemma/morph for every vulgate_words row. Returns a stats dict."""
     if not pack_path.exists():
@@ -64,7 +85,7 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
         verses.append(([r[1] for r in g], [r[2] for r in g]))
 
     stats = {"verses": len(verses), "words": 0, "lemmatized": 0,
-             "mismatches": 0, "recased": 0}
+             "mismatches": 0, "recased": 0, "overridden": 0}
 
     texts = (" ".join(words) for _ids, words in verses)
     done = 0
@@ -102,12 +123,16 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
                 # unchanged, since the retry returns the same form.
                 if lemma and head.pos_ in ("VERB", "AUX") \
                         and lemma == _norm_latin(wsurf):
+                    folded = _norm_latin(wsurf)
                     retry = nlp(wsurf.lower())
-                    if len(retry):
-                        rlem = retry[0].lemma_
-                        if rlem and rlem != _norm_latin(wsurf):
-                            lemma = rlem
-                            stats["recased"] = stats.get("recased", 0) + 1
+                    rlem = retry[0].lemma_ if len(retry) else None
+                    if rlem and rlem != folded:
+                        lemma = rlem
+                        stats["recased"] += 1
+                    elif folded in _LEMMA_OVERRIDES:
+                        # retry couldn't resolve it; use the enumerated override
+                        lemma = _LEMMA_OVERRIDES[folded]
+                        stats["overridden"] += 1
                 pack.execute(
                     "UPDATE vulgate_words SET lemma=?, morph=? WHERE id=?",
                     (lemma, _morph_string(head), wid),
@@ -140,7 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"vulgate_words lemmatized: {stats['lemmatized']:,}/{stats['words']:,} "
           f"words across {stats['verses']:,} verses "
           f"({stats['mismatches']:,} length-mismatch skips, "
-          f"{stats['recased']:,} verb lemmas recovered via lowercased retry)",
+          f"{stats['recased']:,} recovered via lowercased retry, "
+          f"{stats['overridden']:,} via closed-corpus override)",
           file=sys.stderr)
     return 0
 
