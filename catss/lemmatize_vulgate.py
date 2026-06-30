@@ -69,18 +69,29 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
     texts = (" ".join(words) for _ids, words in verses)
     done = 0
     for (word_ids, words), doc in zip(verses, nlp.pipe(texts, batch_size=CHUNK)):
-        dtoks = [t for t in doc if not t.is_space and t.text.strip()]
-        di = 0
-        for wid, wsurf in zip(word_ids, words):
-            head = dtoks[di] if di < len(dtoks) else None
-            # consume one-or-more sub-tokens until their (length-preserving,
-            # normalized) text covers this word — EncliticSplitter may split it
-            acc = 0
-            target = len(wsurf)
-            while di < len(dtoks) and acc < target:
-                acc += len(dtoks[di].text)
-                di += 1
-            if head is not None and acc == target:
+        # Map each stored word to its head Doc token by ABSOLUTE char offset.
+        # The text we fed is " ".join(words), so word k occupies a known
+        # [start, end) span; token.idx is that token's offset into the same
+        # string (the v->u/j->i fold is length-preserving, so offsets are
+        # exact). The head is the first non-space token starting inside the
+        # word's span; EncliticSplitter sub-tokens (e.g. "que" after "Dixit")
+        # share the span and are skipped. Using absolute offsets — not a running
+        # counter — means a token that fails to land in a word's span leaves
+        # that one word NULL without shifting any later word's mapping.
+        toks = [t for t in doc if not t.is_space and t.text.strip()]
+        starts = []
+        pos = 0
+        for w in words:
+            starts.append(pos)
+            pos += len(w) + 1   # + the single-space separator
+        ti = 0
+        for wid, wsurf, w_start in zip(word_ids, words, starts):
+            w_end = w_start + len(wsurf)
+            while ti < len(toks) and toks[ti].idx < w_start:
+                ti += 1
+            head = (toks[ti] if ti < len(toks) and toks[ti].idx < w_end
+                    else None)
+            if head is not None:
                 lemma = head.lemma_ or None
                 # A capitalized (usually verse-initial) verb often gets the
                 # model's fallback self-lemma — the normalized surface — instead
@@ -104,12 +115,10 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
                 if lemma:
                     stats["lemmatized"] += 1
             else:
-                # Length desync — should not happen: the normalizer is
-                # length-preserving (v->u, j->i) and surfaces are space-joined,
-                # punctuation-free, so the tokenizer never crosses a word
-                # boundary. If it ever did, this word's lemma/morph stays NULL
-                # and di may sit mid-word; the per-verse di reset (outer loop)
-                # bounds any cascade to this verse. mismatches is reported.
+                # No token started inside this word's span (shouldn't happen
+                # for space-joined, punctuation-free surfaces). Leave lemma/morph
+                # NULL for THIS word only — the next word resyncs by absolute
+                # offset, so a miss can't shift any following word. Reported.
                 stats["mismatches"] += 1
             stats["words"] += 1
         done += 1
