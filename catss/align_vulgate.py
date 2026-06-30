@@ -23,10 +23,20 @@ grow-diag-final-and; intersection links get confidence 1.0, grown links 0.5.
     vulgate_word_id INTEGER NOT NULL REFERENCES vulgate_words(id)
     target_kind     TEXT NOT NULL     -- 'mt_row' | 'lxx_word'
     target_id       INTEGER NOT NULL  -- alignments.id | lxx_morph.id in catss.db
+    target_sub      INTEGER NOT NULL  -- mt: 0-based morpheme index within the
+                                      --     '/'-split mt_unicode cell; lxx: 0
     pivot           TEXT NOT NULL     -- 'mt' | 'lxx'
-    method          TEXT NOT NULL     -- 'eflomal-gdfa'
+    method          TEXT NOT NULL     -- 'eflomal-gdf'
     confidence      REAL NOT NULL
-    UNIQUE(vulgate_word_id, target_kind, target_id)
+    UNIQUE(vulgate_word_id, target_kind, target_id, target_sub)
+
+The Hebrew has no per-word stable id in catss.db — the `alignments` row is the
+finest CATSS unit. We still feed eflomal morpheme-level tokens (CATSS joins
+prefixes with '/') because that gives far better co-occurrence statistics, and
+`target_sub` records which morpheme of the row a Latin word hit, so distinct
+morpheme links to the same row are preserved rather than collapsed by the
+unique key. Consumers that only want row-level highlighting ignore target_sub;
+those wanting the morpheme re-split mt_unicode on '/' and index by it.
 """
 from __future__ import annotations
 
@@ -44,10 +54,11 @@ CREATE TABLE IF NOT EXISTS vulgate_align (
     vulgate_word_id INTEGER NOT NULL REFERENCES vulgate_words(id),
     target_kind     TEXT NOT NULL,
     target_id       INTEGER NOT NULL,
+    target_sub      INTEGER NOT NULL DEFAULT 0,
     pivot           TEXT NOT NULL,
     method          TEXT NOT NULL,
     confidence      REAL NOT NULL,
-    UNIQUE(vulgate_word_id, target_kind, target_id)
+    UNIQUE(vulgate_word_id, target_kind, target_id, target_sub)
 );
 CREATE INDEX IF NOT EXISTS idx_va_word ON vulgate_align(vulgate_word_id);
 CREATE INDEX IF NOT EXISTS idx_va_target ON vulgate_align(target_kind, target_id);
@@ -64,14 +75,17 @@ def _split_hebrew(text: str) -> list[str]:
 
 
 def _pivot_tokens(catss: sqlite3.Connection, pivot: str, verse_id: int):
-    """Return (tokens, target_ids) for the pivot side of one CATSS verse.
+    """Return (tokens, target_ids, target_subs) for the pivot side of one verse.
 
-    Token i was produced by target_ids[i] (an alignments.id for mt, an
-    lxx_morph.id for lxx). For mt, one row can yield several tokens that all
-    point back to the same row id.
+    Token i came from target_ids[i] (an lxx_morph.id for lxx, an alignments.id
+    for mt) at sub-index target_subs[i]. lxx words are already 1:1 with their
+    id, so sub is always 0. An mt row split into several Hebrew morphemes keeps
+    the same id but a distinct sub per morpheme, so links to the same row stay
+    individually addressable.
     """
     tokens: list[str] = []
     target_ids: list[int] = []
+    target_subs: list[int] = []
     if pivot == "lxx":
         for wid, surf in catss.execute(
             "SELECT id, surface_unicode FROM lxx_morph "
@@ -81,16 +95,18 @@ def _pivot_tokens(catss: sqlite3.Connection, pivot: str, verse_id: int):
             if surf:
                 tokens.append(surf)
                 target_ids.append(wid)
+                target_subs.append(0)
     else:  # mt
         for aid, mt in catss.execute(
             "SELECT id, mt_unicode FROM alignments "
             "WHERE verse_id=? AND mt_unicode IS NOT NULL ORDER BY row_order",
             (verse_id,)
         ):
-            for tok in _split_hebrew(mt or ""):
+            for sub, tok in enumerate(_split_hebrew(mt or "")):
                 tokens.append(tok)
                 target_ids.append(aid)
-    return tokens, target_ids
+                target_subs.append(sub)
+    return tokens, target_ids, target_subs
 
 
 def _gather_pairs(pack: sqlite3.Connection, catss: sqlite3.Connection, pivot: str):
@@ -112,10 +128,10 @@ def _gather_pairs(pack: sqlite3.Connection, catss: sqlite3.Connection, pivot: st
             continue
         latin_ids = [w[0] for w in words]
         latin_norms = [w[1] for w in words]
-        toks, tgt_ids = _pivot_tokens(catss, pivot, catss_verse_id)
+        toks, tgt_ids, tgt_subs = _pivot_tokens(catss, pivot, catss_verse_id)
         if not toks:
             continue
-        yield latin_ids, latin_norms, tgt_ids, toks
+        yield latin_ids, latin_norms, tgt_ids, tgt_subs, toks
 
 
 def _run_eflomal(src_lines: list[str], trg_lines: list[str]):
@@ -150,9 +166,16 @@ def _parse_links(line: str) -> list[tuple[int, int]]:
     return out
 
 
-def _gdfa(fwd: list[tuple[int, int]], rev: list[tuple[int, int]],
-          n_src: int, n_trg: int) -> dict[tuple[int, int], str]:
-    """grow-diag-final-and symmetrization. Returns {(i,j): 'intersection'|'grown'}."""
+def _gdf(fwd: list[tuple[int, int]], rev: list[tuple[int, int]],
+         n_src: int, n_trg: int) -> dict[tuple[int, int], str]:
+    """grow-diag-final symmetrization. Returns {(i,j): 'intersection'|'grown'}.
+
+    Start from the intersection (high precision), grow into diagonal/adjacent
+    union neighbours, then a FINAL pass adds any remaining union point with at
+    least ONE free endpoint. (The stricter '-and' variant — both endpoints
+    free — drops a union link whenever its counterpart position is already
+    taken, costing real recall; we use the standard OR final.)
+    """
     e2f, f2e = set(fwd), set(rev)
     union = e2f | f2e
     align: dict[tuple[int, int], str] = {p: "intersection" for p in (e2f & f2e)}
@@ -176,7 +199,7 @@ def _gdfa(fwd: list[tuple[int, int]], rev: list[tuple[int, int]],
                     added = True
 
     for (i, j) in union:
-        if (i, j) not in align and i not in aligned_src and j not in aligned_trg:
+        if (i, j) not in align and (i not in aligned_src or j not in aligned_trg):
             align[(i, j)] = "grown"
             aligned_src.add(i)
             aligned_trg.add(j)
@@ -212,17 +235,19 @@ def align(pack_path: pathlib.Path, catss_db: pathlib.Path,
 
         kind = "lxx_word" if pivot == "lxx" else "mt_row"
         plinks = 0
-        for line_i, (latin_ids, latin_norms, tgt_ids, toks) in enumerate(pairs):
-            links = _gdfa(fwd[line_i], rev[line_i], len(latin_ids), len(toks))
+        for line_i, (latin_ids, latin_norms, tgt_ids, tgt_subs, toks) in enumerate(pairs):
+            links = _gdf(fwd[line_i], rev[line_i], len(latin_ids), len(toks))
             for (i, j), cat in links.items():
                 conf = 1.0 if cat == "intersection" else 0.5
                 pack.execute(
                     "INSERT INTO vulgate_align "
-                    "(vulgate_word_id, target_kind, target_id, pivot, method, confidence) "
-                    "VALUES (?,?,?,?,?,?) "
-                    "ON CONFLICT(vulgate_word_id, target_kind, target_id) "
+                    "(vulgate_word_id, target_kind, target_id, target_sub, "
+                    " pivot, method, confidence) "
+                    "VALUES (?,?,?,?,?,?,?) "
+                    "ON CONFLICT(vulgate_word_id, target_kind, target_id, target_sub) "
                     "DO UPDATE SET confidence=MAX(confidence, excluded.confidence)",
-                    (latin_ids[i], kind, tgt_ids[j], pivot, "eflomal-gdfa", conf),
+                    (latin_ids[i], kind, tgt_ids[j], tgt_subs[j],
+                     pivot, "eflomal-gdf", conf),
                 )
                 stats[cat] += 1
                 plinks += 1

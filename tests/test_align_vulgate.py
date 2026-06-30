@@ -16,11 +16,11 @@ def test_split_hebrew_splits_morpheme_slashes():
     assert av._split_hebrew("") == []
 
 
-def test_gdfa_intersection_and_grow():
+def test_gdf_intersection_and_grow():
     # fwd and rev agree on (0,0); fwd has extra (1,2), rev has extra (1,1).
     fwd = [(0, 0), (1, 2)]
     rev = [(0, 0), (1, 1)]
-    align = av._gdfa(fwd, rev, n_src=2, n_trg=3)
+    align = av._gdf(fwd, rev, n_src=2, n_trg=3)
     # the agreed link is the intersection
     assert align[(0, 0)] == "intersection"
     # union points adjacent to the intersection get grown in
@@ -28,15 +28,23 @@ def test_gdfa_intersection_and_grow():
     assert all(align[p] == "grown" for p in [(1, 1), (1, 2)])
 
 
-def test_gdfa_final_and_adds_unaligned_union_point():
-    # A union point with BOTH endpoints otherwise unaligned, not diag-adjacent
-    # to the intersection, is added by the final-and pass.
+def test_gdf_final_adds_union_point_with_one_free_endpoint():
+    # (2,0): trg 0 is already aligned (to src 0) but src 2 is free, and it is
+    # NOT adjacent to the intersection. The OR-final pass must still add it;
+    # the stricter '-and' variant would wrongly drop it.
+    fwd = [(0, 0), (2, 0)]
+    rev = [(0, 0)]
+    align = av._gdf(fwd, rev, n_src=3, n_trg=3)
+    assert align[(0, 0)] == "intersection"
+    assert align.get((2, 0)) == "grown"
+
+
+def test_gdf_final_adds_fully_free_union_point():
     fwd = [(0, 0), (2, 2)]
     rev = [(0, 0)]
-    align = av._gdfa(fwd, rev, n_src=3, n_trg=3)
-    assert align[(0, 0)] == "intersection"
-    assert align.get((2, 2)) == "grown"  # final-and: 2 and 2 both free
+    align = av._gdf(fwd, rev, n_src=3, n_trg=3)
+    assert align.get((2, 2)) == "grown"
 
 
-def test_gdfa_empty():
-    assert av._gdfa([], [], 2, 2) == {}
+def test_gdf_empty():
+    assert av._gdf([], [], 2, 2) == {}
