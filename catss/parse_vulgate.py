@@ -167,7 +167,7 @@ def parse_file(
 
     Every source line lands in exactly one disjoint bucket, surfaced via the
     optional `stats` dict (fully populated once the generator is consumed):
-      malformed  - wrong column count or non-integer ch/v
+      malformed  - wrong column count (incl. blank lines) or non-integer ch/v
       unmapped   - NT / unmapped book (every copy, classified before dedup)
       duplicates - a repeat of an already-seen MAPPED verse
       yielded    - first occurrence of a mapped verse (what we emit)
@@ -180,10 +180,11 @@ def parse_file(
     with path.open(encoding="utf-8") as fh:
         for lineno, line in enumerate(fh, 1):
             line = line.rstrip("\n")
-            if not line:
-                continue
             cols = line.split("\t")
             if len(cols) < 6:
+                # Too few columns — includes blank/whitespace-only lines, which
+                # split to a single field. Counted as malformed so EVERY source
+                # line lands in a bucket (nothing dropped silently).
                 counts["malformed"] += 1
                 continue
             abbrev = cols[1].strip()

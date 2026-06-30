@@ -51,15 +51,18 @@ def test_parse_stats_surface_skip_counts(tmp_path):
         _row("Matthaeus", "Mt", 47, 1, 1, "Liber."),       # NT -> unmapped
         _row("Matthaeus", "Mt", 47, 1, 1, "Liber."),       # NT copy -> unmapped (NOT duplicate)
         "too\tfew\tcols",                                   # malformed
+        "",                                                 # blank -> malformed
         _row("Genesis", "Gn", 1, "x", "y", "bad ref"),     # malformed
     ]) + "\n", encoding="utf-8")
     stats = {}
     n = len(list(parse_vulgate.parse_file(p, stats=stats)))
     assert n == 1
-    # unmapped copies count as unmapped, not duplicates; buckets are disjoint
-    assert stats == {"malformed": 2, "duplicates": 2,
+    # unmapped copies count as unmapped, not duplicates; blank counts malformed;
+    # buckets are disjoint and every line is accounted for.
+    assert stats == {"malformed": 3, "duplicates": 2,
                      "unmapped": 2, "yielded": 1}
     assert stats["duplicates"] == 2 * stats["yielded"]  # clean-x3 invariant
+    assert sum(stats.values()) == 8                      # every line bucketed
 
 
 def test_extra_columns_preserve_embedded_tab(tmp_path):
