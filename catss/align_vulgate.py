@@ -80,31 +80,60 @@ def _split_hebrew(text: str) -> list[str]:
 
 
 def _pivot_tokens(catss: sqlite3.Connection, pivot: str, verse_id: int):
-    """Return (tokens, target_ids, target_subs) for the pivot side of one verse.
+    """Return (tokens, target_ids, target_subs, target_kinds) for the pivot side
+    of one verse.
 
-    Token i came from target_ids[i] (an lxx_morph.id for lxx, an alignments.id
-    for mt) at sub-index target_subs[i]. lxx words are already 1:1 with their
-    id, so sub is always 0. An mt row split into several Hebrew morphemes keeps
-    the same id but a distinct sub per morpheme, so links to the same row stay
-    individually addressable.
+    Token i came from target_ids[i] at sub-index target_subs[i], with
+    target_kinds[i] naming what target_ids[i] references:
+
+      'mt_row'   -> an alignments.id (a gold MT<->LXX row). Used for the mt pivot
+                    (Latin aligned to the row's Hebrew) AND for lxx-pivot verses
+                    that HAVE gold rows (Latin aligned to the row's Greek) so the
+                    parallel view can place Latin as an aligned column.
+      'lxx_word' -> an lxx_morph.id. Used only for lxx-pivot verses with NO gold
+                    rows (Greek-only/deuterocanon), where there is no row to
+                    attach to; the view renders these as a Greek|Latin grid.
+
+    An mt row split into several morphemes keeps the same id with a distinct sub
+    per morpheme, so links to the same row stay individually addressable.
     """
     tokens: list[str] = []
     target_ids: list[int] = []
     target_subs: list[int] = []
+    target_kinds: list[str] = []
     if pivot == "lxx":
-        for wid, surf in catss.execute(
-            "SELECT id, surface_unicode FROM lxx_morph "
-            "WHERE verse_id=? ORDER BY position", (verse_id,)
-        ):
-            # Collapse any internal whitespace so each lxx token stays a single
-            # space-delimited unit in the eflomal target line — keeps the 1:1
-            # token<->target_id invariant the link decoder relies on (no-op for
-            # real LXX surfaces, which are single words; defensive guard only).
-            surf = "".join((surf or "").split())
-            if surf:
-                tokens.append(surf)
-                target_ids.append(wid)
-                target_subs.append(0)
+        # Prefer the gold rows' LXX (Greek) cells when this verse has them, so a
+        # Latin word links to a ROW (mt_row) the parallel grid can render as an
+        # aligned Hebrew|Greek|Latin column. Aligning to the row's Greek (not the
+        # Hebrew) is correct: the Vulgate Psalter is Jerome's Gallican, made from
+        # the Greek. Falls back to per-word lxx_morph (lxx_word) only for verses
+        # with no gold alignment at all (deuterocanon, Rahlfs-only Psalm verses).
+        rows = catss.execute(
+            "SELECT id, lxx_unicode FROM alignments "
+            "WHERE verse_id=? AND lxx_unicode IS NOT NULL AND lxx_unicode<>'' "
+            "ORDER BY row_order", (verse_id,)
+        ).fetchall()
+        if rows:
+            for aid, lxx in rows:
+                for sub, tok in enumerate((lxx or "").split()):
+                    if tok:
+                        tokens.append(tok)
+                        target_ids.append(aid)
+                        target_subs.append(sub)
+                        target_kinds.append("mt_row")
+        else:
+            for wid, surf in catss.execute(
+                "SELECT id, surface_unicode FROM lxx_morph "
+                "WHERE verse_id=? ORDER BY position", (verse_id,)
+            ):
+                # Collapse internal whitespace so each lxx token stays a single
+                # space-delimited unit (no-op for real LXX surfaces; guard only).
+                surf = "".join((surf or "").split())
+                if surf:
+                    tokens.append(surf)
+                    target_ids.append(wid)
+                    target_subs.append(0)
+                    target_kinds.append("lxx_word")
     else:  # mt
         for aid, mt in catss.execute(
             "SELECT id, mt_unicode FROM alignments "
@@ -115,7 +144,8 @@ def _pivot_tokens(catss: sqlite3.Connection, pivot: str, verse_id: int):
                 tokens.append(tok)
                 target_ids.append(aid)
                 target_subs.append(sub)
-    return tokens, target_ids, target_subs
+                target_kinds.append("mt_row")
+    return tokens, target_ids, target_subs, target_kinds
 
 
 def _gather_pairs(pack: sqlite3.Connection, catss: sqlite3.Connection, pivot: str):
@@ -149,10 +179,10 @@ def _gather_pairs(pack: sqlite3.Connection, catss: sqlite3.Connection, pivot: st
             latin_norms.append(tok)
         if not latin_ids:
             continue
-        toks, tgt_ids, tgt_subs = _pivot_tokens(catss, pivot, catss_verse_id)
+        toks, tgt_ids, tgt_subs, tgt_kinds = _pivot_tokens(catss, pivot, catss_verse_id)
         if not toks:
             continue
-        yield latin_ids, latin_norms, tgt_ids, tgt_subs, toks
+        yield latin_ids, latin_norms, tgt_ids, tgt_subs, tgt_kinds, toks
 
 
 def _run_eflomal(src_lines: list[str], trg_lines: list[str]):
@@ -260,17 +290,18 @@ def align(pack_path: pathlib.Path, catss_db: pathlib.Path,
             stats["by_pivot"][pivot] = {"verses": 0, "links": 0}
             continue
         src_lines = [" ".join(p[1]) for p in pairs]   # latin norms
-        trg_lines = [" ".join(p[4]) for p in pairs]   # pivot tokens
+        trg_lines = [" ".join(p[5]) for p in pairs]   # pivot tokens
         print(f"  eflomal[{pivot}]: {len(pairs):,} verse pairs ...",
               file=sys.stderr)
         fwd, rev = _run_eflomal(src_lines, trg_lines)
 
-        kind = "lxx_word" if pivot == "lxx" else "mt_row"
         plinks = 0
-        for line_i, (latin_ids, latin_norms, tgt_ids, tgt_subs, toks) in enumerate(pairs):
+        for line_i, (latin_ids, latin_norms, tgt_ids, tgt_subs, tgt_kinds, toks) in enumerate(pairs):
             links = _gdf(fwd[line_i], rev[line_i], len(latin_ids), len(toks))
             for (i, j), cat in links.items():
                 conf = 1.0 if cat == "intersection" else 0.5
+                # Per-token kind: lxx-pivot verses with gold rows emit 'mt_row'
+                # (Latin↔row), those without emit 'lxx_word' (Latin↔lxx_morph).
                 pack.execute(
                     "INSERT INTO vulgate_align "
                     "(vulgate_word_id, target_kind, target_id, target_sub, "
@@ -278,7 +309,7 @@ def align(pack_path: pathlib.Path, catss_db: pathlib.Path,
                     "VALUES (?,?,?,?,?,?,?) "
                     "ON CONFLICT(vulgate_word_id, target_kind, target_id, target_sub) "
                     "DO UPDATE SET confidence=MAX(confidence, excluded.confidence)",
-                    (latin_ids[i], kind, tgt_ids[j], tgt_subs[j],
+                    (latin_ids[i], tgt_kinds[j], tgt_ids[j], tgt_subs[j],
                      pivot, "eflomal-gdf", conf),
                 )
                 stats[cat] += 1
