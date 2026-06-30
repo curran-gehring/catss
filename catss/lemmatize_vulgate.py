@@ -82,7 +82,12 @@ def lemmatize(pack_path: pathlib.Path, model: str = MODEL) -> dict:
                 if lemma:
                     stats["lemmatized"] += 1
             else:
-                # length desync (rare): leave lemma/morph NULL, resync next word
+                # Length desync — should not happen: the normalizer is
+                # length-preserving (v->u, j->i) and surfaces are space-joined,
+                # punctuation-free, so the tokenizer never crosses a word
+                # boundary. If it ever did, this word's lemma/morph stays NULL
+                # and di may sit mid-word; the per-verse di reset (outer loop)
+                # bounds any cascade to this verse. mismatches is reported.
                 stats["mismatches"] += 1
             stats["words"] += 1
         done += 1

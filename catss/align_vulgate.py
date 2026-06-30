@@ -24,20 +24,24 @@ grown links 0.5.
     vulgate_word_id INTEGER NOT NULL REFERENCES vulgate_words(id)
     target_kind     TEXT NOT NULL     -- 'mt_row' | 'lxx_word'
     target_id       INTEGER NOT NULL  -- alignments.id | lxx_morph.id in catss.db
-    target_sub      INTEGER NOT NULL  -- mt: 0-based morpheme index within the
-                                      --     '/'-split mt_unicode cell; lxx: 0
+    target_sub      INTEGER NOT NULL  -- mt: 0-based token index into
+                                      --     _split_hebrew(mt_unicode), which
+                                      --     splits on '/' AND whitespace; lxx: 0
     pivot           TEXT NOT NULL     -- 'mt' | 'lxx'
     method          TEXT NOT NULL     -- 'eflomal-gdf'
     confidence      REAL NOT NULL
     UNIQUE(vulgate_word_id, target_kind, target_id, target_sub)
 
 The Hebrew has no per-word stable id in catss.db — the `alignments` row is the
-finest CATSS unit. We still feed eflomal morpheme-level tokens (CATSS joins
-prefixes with '/') because that gives far better co-occurrence statistics, and
-`target_sub` records which morpheme of the row a Latin word hit, so distinct
-morpheme links to the same row are preserved rather than collapsed by the
-unique key. Consumers that only want row-level highlighting ignore target_sub;
-those wanting the morpheme re-split mt_unicode on '/' and index by it.
+finest CATSS unit. We still feed eflomal sub-row tokens (CATSS joins prefixes
+with '/', and one alignment cell may hold several space-separated Hebrew words)
+because that gives far better co-occurrence statistics, and `target_sub` records
+which sub-row token a Latin word hit, so distinct links to the same row are
+preserved rather than collapsed by the unique key. Consumers that only want
+row-level highlighting ignore target_sub; those wanting the exact token MUST
+tokenize mt_unicode the same way the producer did — split on '/' AND whitespace,
+markers (*, **) retained, i.e. reuse `_split_hebrew` — and index by it. Splitting
+on '/' alone desyncs the index on ketiv/qere and any multi-word Hebrew cell.
 """
 from __future__ import annotations
 
@@ -92,7 +96,11 @@ def _pivot_tokens(catss: sqlite3.Connection, pivot: str, verse_id: int):
             "SELECT id, surface_unicode FROM lxx_morph "
             "WHERE verse_id=? ORDER BY position", (verse_id,)
         ):
-            surf = (surf or "").strip()
+            # Collapse any internal whitespace so each lxx token stays a single
+            # space-delimited unit in the eflomal target line — keeps the 1:1
+            # token<->target_id invariant the link decoder relies on (no-op for
+            # real LXX surfaces, which are single words; defensive guard only).
+            surf = "".join((surf or "").split())
             if surf:
                 tokens.append(surf)
                 target_ids.append(wid)
