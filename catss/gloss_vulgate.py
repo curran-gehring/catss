@@ -177,8 +177,45 @@ CLOSED_CLASS = {
 }
 
 
+_PAREN = re.compile(r"\s*[(\[][^)\]]*[)\]]")
+
+
+def _shorten(sense: str) -> str:
+    """Compress one Whitaker sense to an interlinear-style card gloss.
+
+    "hate/hatred/dislike/antipathy" -> "hate/hatred";
+    "unfairness, inequality, unevenness (of terrain)" ->
+    "unfairness, inequality"; "designate w/nod, nod assent" ->
+    "designate with nod". Deterministic: strip parentheticals/brackets,
+    expand Whitaker's "w/", keep slash-alternatives to ~12 chars and
+    comma-synonyms to ~24 chars (always at least one of each).
+    """
+    s = _PAREN.sub("", sense).replace("w/", "with ").strip(" ,")
+    if len(s) <= 24:
+        return s
+    toks = []
+    for tok in (t.strip() for t in s.split(",") if t.strip()):
+        alts, kept = tok.split("/"), []
+        for a in alts:
+            if kept and len("/".join(kept + [a])) > 12:
+                break
+            kept.append(a)
+        toks.append("/".join(kept))
+    out = toks[0]
+    for tok in toks[1:]:
+        if len(out) + 2 + len(tok) > 24:
+            break
+        out += ", " + tok
+    # Definition-style senses ("place in temple where image of deity was
+    # preserved...") have no synonym boundaries to trim on; cap them at a
+    # word boundary — the full sense stays a tap away in gloss_full.
+    if len(out) > 40:
+        out = out[:40].rsplit(" ", 1)[0].rstrip(" ,") + "…"
+    return out
+
+
 def parse_dictline(path: Path):
-    """Yield (candidate_folded, pos, freq_rank, order, gloss)."""
+    """Yield (candidate_folded, pos, freq_rank, order, short, full, primary)."""
     for order, raw in enumerate(path.read_text(encoding="latin-1").splitlines()):
         if len(raw) < 112:
             continue
@@ -197,22 +234,24 @@ def parse_dictline(path: Path):
         # frequency flag: 4th of the five single-letter flags before the gloss
         flags = raw[100:110].split()
         freq = FREQ_RANK.get(flags[3] if len(flags) >= 4 else "X", 8)
-        # primary sense only, trimmed for the word card
         senses = [s.strip() for s in gloss.rstrip(";").split(";") if s.strip()]
-        short = "; ".join(senses[:2])
-        if len(short) > 60:
-            short = senses[0][:60].rstrip(" ,")
+        # full: up to two senses, for the tap-detail sheet
+        full = "; ".join(senses[:2])
+        if len(full) > 60:
+            full = senses[0][:60].rstrip(" ,")
+        # short: interlinear-style 1-3 words, for the word card
+        short = _shorten(senses[0]) if senses else full
         for cand, primary in _candidates(stem1, pos, body):
-            yield _fold(cand), pos, freq, order, short, primary
+            yield _fold(cand), pos, freq, order, short, full, primary
 
 
 def build_index(dictline: Path) -> dict[str, list[tuple]]:
     idx: dict[str, list[tuple]] = defaultdict(list)
-    for cand, pos, freq, order, gloss, primary in parse_dictline(dictline):
-        idx[cand].append((pos, freq, order, gloss, primary))
+    for cand, pos, freq, order, short, full, primary in parse_dictline(dictline):
+        idx[cand].append((pos, freq, order, short, full, primary))
     for entries in idx.values():
         # decl/conj-correct reconstructions first, then freq, then file order
-        entries.sort(key=lambda e: (not e[4], e[1], e[2]))
+        entries.sort(key=lambda e: (not e[5], e[1], e[2]))
     return idx
 
 
@@ -240,25 +279,26 @@ def main() -> int:
         if upos == "PROPN":
             continue                       # names gloss themselves
         if lemma in CLOSED_CLASS:
-            rows.append((lemma, CLOSED_CLASS[lemma]))
+            full = CLOSED_CLASS[lemma]
+            short = full if len(full) <= 24 else _shorten(full.split(";")[0])
+            rows.append((lemma, short, full))
             continue
         entries = idx.get(lemma)
-        gloss = None
+        hit = None
         if entries:
             prefs = UPOS_TO_POS.get(upos, ())
             for want in prefs:             # first acceptable POS wins
                 hit = next((e for e in entries if e[0] == want), None)
                 if hit:
-                    gloss = hit[3]
                     break
-            if gloss is None:              # POS mismatch: take best overall
-                gloss = entries[0][3]
-        if gloss:
-            rows.append((lemma, gloss))
+            if hit is None:                # POS mismatch: take best overall
+                hit = entries[0]
+        if hit:
+            rows.append((lemma, hit[3], hit[4]))
         else:
             missed.append((ntok, lemma, upos))
 
-    covered_tok = sum(lemmas[l][1] for l, _ in rows)
+    covered_tok = sum(lemmas[l][1] for l, _, _ in rows)
     total_tok = sum(n for u, n in lemmas.values() if u != "PROPN")
     print(f"glossed {len(rows)}/{len([1 for u,_ in lemmas.values() if u != 'PROPN'])} "
           f"non-proper lemmas = {covered_tok}/{total_tok} tokens "
@@ -270,10 +310,14 @@ def main() -> int:
 
     if args.dry_run:
         return 0
-    db.execute("CREATE TABLE IF NOT EXISTS lemma_glosses ("
-               " lemma TEXT PRIMARY KEY, gloss TEXT NOT NULL)")
-    db.execute("DELETE FROM lemma_glosses")
-    db.executemany("INSERT INTO lemma_glosses VALUES (?,?)", rows)
+    # gloss = interlinear-short (word card); gloss_full = up to two Whitaker
+    # senses (tap-detail sheet). DROP first: the 2026-07-03 first ship had a
+    # single-column table, and CREATE IF NOT EXISTS would keep that shape.
+    db.execute("DROP TABLE IF EXISTS lemma_glosses")
+    db.execute("CREATE TABLE lemma_glosses ("
+               " lemma TEXT PRIMARY KEY, gloss TEXT NOT NULL,"
+               " gloss_full TEXT NOT NULL)")
+    db.executemany("INSERT INTO lemma_glosses VALUES (?,?,?)", rows)
     db.commit()
     db.close()
     print("lemma_glosses written")
