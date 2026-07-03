@@ -177,7 +177,10 @@ CLOSED_CLASS = {
 }
 
 
-_PAREN = re.compile(r"\s*[(\[][^)\]]*[)\]]")
+# complete (...) / [...] groups, plus a trailing unclosed one -- sense
+# splitting on ';' can cut through a bracketed usage note ("night [prima
+# nocte => early in the night; ...]")
+_PAREN = re.compile(r"\s*[(\[][^)\]]*(?:[)\]]|$)")
 
 
 def _shorten(sense: str) -> str:
