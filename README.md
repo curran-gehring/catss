@@ -72,6 +72,34 @@ always query using the composite key `(book, chapter, verse, position)`.
   consumers matching on `(book, ch, v)` may get misaligned hits for a
   handful of Psalms. Workaround: normalize upstream, or use the LXX verse
   number shown in `[ ]` markup.
+- **Six `.par` verse headers are not the Hebrew Bible's numbers.** The
+  parallel files head these verses differently from BHS. Headers are
+  persisted verbatim, so the `alignments` rows hang on `verses` numbered
+  as the files number them, and a consumer that joins the alignment to a
+  Hebrew or English Bible on `(book, chapter, verse)` is one verse off
+  there:
+  - Lamentations 1: the Greek prologue is headed `1:1`, so the alignment
+    rows of Hebrew 1:1-22 are stored as 1:2-23 (and the chapter has a
+    verse 23).
+  - Joshua 22: Hebrew 22:21 has no header of its own and runs on under
+    `22:20`, so the chapter has 33 headers for 34 verses. `22:20` holds
+    Hebrew 22:20-21, and the headers `22:21` to `22:33` head Hebrew
+    22:22-34.
+  - Deuteronomy 28:65, Ezekiel 34:28 and Daniel (Th) 7:21 each hold the
+    verse before them as well (28:64, 34:27, 7:20, which have no
+    alignment rows of their own).
+  - Numbers `6:45` is a mistyped header: its one row is the first word of
+    Numbers 26:45.
+
+  The morphology files number these chapters the usual way (the
+  Lamentations prologue is verse 0 there, as the superscriptions entry
+  below says), so in these places one `verses` row carries the alignment
+  of one verse and the `lxx_morph` words of another: Lamentations 1:1 has
+  the prologue's alignment rows and the morphology of "πῶς ἐκάθισεν".
+  Workaround: renumber the alignment's verses before joining. The list
+  was found by comparing every verse's Hebrew with the Westminster
+  Leningrad Codex; no other verse of the 39 Hebrew-canon books is
+  numbered differently.
 - **Hebrew text is consonantal only.** CATSS ships the unvocalized
   Michigan-Claremont BHS text; accent numeric codes, angle-bracket
   cross-references (`<1.7>`), and text-critical apparatus tokens are
@@ -82,9 +110,11 @@ always query using the composite key `(book, chapter, verse, position)`.
   versified `1:1a`, `1:1b`, ... in CCAT's morphology; their words merge
   into the base verse with continued positions (the subverse letter is
   not preserved).
-- **Superscriptions are verse 0.** Ode/psalm titles and book prefaces
-  (Odes, Psalms of Solomon, EpJer, Lamentations, Bel, OG Daniel) are
-  stored as verse 0 of the chapter they introduce.
+- **Superscriptions are verse 0 in the morphology.** Ode/psalm titles and
+  book prefaces (Odes, Psalms of Solomon, EpJer, Lamentations, Bel, OG
+  Daniel) are stored as verse 0 of the chapter they introduce. This is
+  the `lxx_morph` side; the alignment keeps its own headers (see the
+  `.par` headers entry above for the Lamentations prologue).
 
 ## Data attribution
 
