@@ -21,3 +21,4 @@ catss-slim.db
 catss.sqlite
 catss_morph.sqlite
 vulgate.sqlite
+vulgate_nt.sqlite
