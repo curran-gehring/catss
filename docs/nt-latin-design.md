@@ -145,26 +145,33 @@ The 1.0/0.5 meaning is the same as in the OT, so the app is unchanged.
 - **Whitaker's WORDS** grants "any and all use of program and data", but it is not a standard licence.
 - **Missing credits.** LatinCy and WORDS already feed the shipped OT pack, but neither is in Acknowledgements. Add both rows.
 
-## Results (build of 2026-11-19, against interlinear etag 0b96e69b)
+## Results (build of 2026-11-20, against interlinear sha256 7939c0d1)
 
-Verse map: 7,951 Latin verses in 7,917 units: same 7,776, renumbered 104,
-unit 29, latin_only 42; 603 Latin-only words (whole verses plus the Comma and
-Received-Text spans in catss/data/nt_latin_only_words.tsv). The audit's 67
+This interlinear restores the SBLGNT words the old parser dropped (Mark
+16:9-20, Rom 16:25-27, and words TAGNT files under a neighbouring verse, such
+as the opening of Acts 13:39 and all of Acts 19:41), so those verses now align
+like any other instead of being Latin-only.
+
+Verse map: 7,951 Latin verses in 7,929 units: same 7,788, renumbered 104,
+unit 32, latin_only 27; 387 Latin-only words (whole verses plus the Comma and
+Received-Text spans in catss/data/nt_latin_only_words.tsv). The audit's 65
 disagreements with the verse aligner all fall inside hand-reviewed rows.
 
-Alignment: 115,503 links (1.0: 113,337; 0.5: 2,166; 2,419 unsupported grown
+Alignment: 115,874 links (1.0: 113,622; 0.5: 2,252; 2,299 unsupported grown
 links dropped). Every link resolves against the shipped interlinear (0
 dangling, 0 surface mismatches, 0 from Latin-only words).
 
-Gold (419 Latin words, the five sample passages): precision 99.5% (377/379;
-1.0 tier 375/377, 0.5 tier 2/2), recall 95.4%, sample coverage 90.5%.
-Corpus coverage: 115,173 of 125,966 linkable Latin words (91.4%). Both errors
-link a periphrastic auxiliary (sunt, est) to the next Greek article; most
-misses are those auxiliaries left unlinked.
+Gold (419 Latin words, the five sample passages): precision 99.2% (376/379;
+1.0 tier 374/376, 0.5 tier 2/3), recall 95.2%, sample coverage 90.5%.
+Corpus coverage: 115,507 of 126,182 linkable Latin words (91.5%). Two errors
+link a periphrastic auxiliary (sunt, est) to the next Greek article; the
+third is a 0.5 link from Rom 3:22's second "omnes" (in "et super omnes",
+which has no Greek) to the first one's πάντας. Most misses are auxiliaries
+left unlinked.
 
-Lemma and parse: 126,569/126,569 words. Glosses: 99.5% of non-proper tokens;
-656 tokens unglossed (pharisaeus, sadducaei are not in WORDS; the rest are
-LatinCy's fused pronoun lemmas such as seipsum, egoipse, and a few
-mislemmas).
+Lemma and parse: 126,569/126,569 words. Glosses: 99.5% of non-proper tokens
+(120,037/120,694); the unglossed are mostly pharisaeus and sadducaei (not in
+WORDS), LatinCy's fused pronoun lemmas such as seipsum and egoipse, and a few
+mislemmas.
 
-Pack: 27.3 MB.
+Pack: 27.4 MB.
