@@ -116,6 +116,38 @@ always query using the composite key `(book, chapter, verse, position)`.
   the `lxx_morph` side; the alignment keeps its own headers (see the
   `.par` headers entry above for the Lamentations prologue).
 
+## New Testament Latin pack (`vulgate_nt.sqlite`)
+
+The Clementine Vulgate New Testament, word-aligned to the SBL Greek New
+Testament as it ships in FirstWord's `bible_interlinear.sqlite`. A separate
+download from the OT `vulgate.sqlite`; design and decisions are in
+[docs/nt-latin-design.md](docs/nt-latin-design.md).
+
+Build against the **shipped** interlinear pack (fetch it from the live
+FirstWord manifest and check its sha256), never an old local copy:
+
+```bash
+# 1. verse map + words (any machine)
+python -m catss.build_vulgate_nt --interlinear bible_interlinear.sqlite --out vulgate_nt.sqlite
+# 2. audit the curated verse map (catss/data/nt_units.tsv); must exit 0
+python -m catss.nt_versemap_audit --interlinear bible_interlinear.sqlite --units catss/data/nt_units.tsv
+# 3. LatinCy lemma + parse (mac-mini: spaCy + la_core_web_lg)
+python -m catss.lemmatize_vulgate --pack vulgate_nt.sqlite
+# 4. eflomal alignment (mac-mini); the OT pack and catss_morph add training lines.
+#    Exits non-zero unless every link resolves against the interlinear.
+python -m catss.align_vulgate_nt --pack vulgate_nt.sqlite --interlinear bible_interlinear.sqlite     --ot-pack vulgate.sqlite --catss-morph catss_morph.sqlite
+# 5. Whitaker's WORDS glosses (DICTLINE.GEN from mk270/whitakers-words)
+python -m catss.gloss_vulgate --db vulgate_nt.sqlite --dictline DICTLINE.GEN
+# 6. quality report against the hand-checked gold links
+python -m catss.eval_nt_gold --pack vulgate_nt.sqlite
+# 7. the resolution test against the shipped interlinear
+FW_VULGATE_NT=vulgate_nt.sqlite FW_INTERLINEAR=bible_interlinear.sqlite python -m pytest tests/test_align_vulgate_nt.py
+```
+
+Links name the Greek word by `(book_id, chapter, verse, word_position)` and
+store its surface, so a rebuilt interlinear pack never silently re-points a
+link: rebuild this pack whenever the interlinear's SBLGNT rows change.
+
 ## Data attribution
 
 CATSS data © Center for Computer Analysis of Texts, University of
@@ -128,6 +160,15 @@ Redistribution of the **raw** CCAT files is governed by the CATSS user
 agreement; this repository ships only the build pipeline (the raw files
 and the derived database are not redistributed here). Not for commercial
 use without written consent from the CATSS data owners.
+
+The NT Latin pack also uses: the SBL Greek New Testament, Copyright 2010 by
+the Society of Biblical Literature and Logos Bible Software, licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (Greek forms are
+copied unmodified; the word alignment is added); the Clementine Vulgate
+(public domain); lemmas and parsing from the
+[LatinCy](https://huggingface.co/latincy/la_core_web_lg) model (MIT, Patrick
+J. Burns); glosses from William Whitaker's WORDS ("freely given for any and
+all use of program and data").
 
 The original CCAT coordinator, Robert Kraft (UPenn), passed away in
 2023, and CCAT no longer has an active maintainer. For issues with
