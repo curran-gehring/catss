@@ -213,6 +213,13 @@ def disagreements(curated, proposed, latin, greek):
     return [(r, cur.get(r, []), prop.get(r, [])) for r in latin if cur.get(r, []) != prop.get(r, [])]
 
 
+def unreviewed(found, reviewed):
+    """The disagreements on Latin verses no curated row covers: the only ones
+    that fail the audit (inside a reviewed row the hand-checked map wins; the
+    aligner cannot cross verses or tell a Received-Text verse from its neighbour)."""
+    return [d for d in found if d[0] not in reviewed]
+
+
 def load_greek(interlinear) -> dict[int, list[tuple[int, int, list[str]]]]:
     """SBLGNT verses of the interlinear pack per book: [(chapter, verse, folded lemmas)]."""
     import sqlite3
@@ -265,7 +272,8 @@ def run(vul_tsv, interlinear, units_tsv=None, iterations: int = 6):
         proposals[b] = [([lrefs[i] for i in li], [grefs[j] for j in gj]) for li, gj in prop]
         if units_tsv is not None:
             curated = vn.resolve_units(lrefs, grefs, rows.get(b, []))
-            disagree[b] = disagreements(curated, prop, lrefs, grefs)
+            reviewed = {r for u in curated if u.note or len(u.latin) > 1 or u.latin != u.greek for r in u.latin}
+            disagree[b] = (disagreements(curated, prop, lrefs, grefs), reviewed)
     return proposals, disagree
 
 
@@ -290,14 +298,18 @@ def main(argv=None) -> int:
                     continue
                 fmt = lambda rs: ",".join(f"{c}:{v}" for c, v in rs)
                 print(f"{b}\t{fmt(lat)}\t{fmt(grk)}\t\t")
-    total = sum(len(d) for d in disagree.values())
-    for b, d in disagree.items():
-        for r, cur, prop in d:
-            fmt = lambda rs: ",".join(f"{c}:{v}" for c, v in rs) or "-"
-            print(f"DISAGREE {b} {r[0]}:{r[1]} curated={fmt(cur)} proposed={fmt(prop)}", file=sys.stderr)
+    total = failing = 0
+    fmt = lambda rs: ",".join(f"{c}:{v}" for c, v in rs) or "-"
+    for b, (found, reviewed) in disagree.items():
+        bad = unreviewed(found, reviewed)
+        total += len(found)
+        failing += len(bad)
+        for r, cur, prop in found:
+            tag = "UNREVIEWED" if (r, cur, prop) in bad else "reviewed"
+            print(f"{tag} {b} {r[0]}:{r[1]} curated={fmt(cur)} proposed={fmt(prop)}", file=sys.stderr)
     if args.units is not None:
-        print(f"{total} Latin verse(s) where the curated map and the verse aligner disagree", file=sys.stderr)
-    return 1 if total else 0
+        print(f"{total} disagreement(s); {failing} on verses no curated row covers", file=sys.stderr)
+    return 1 if failing else 0
 
 
 if __name__ == "__main__":
