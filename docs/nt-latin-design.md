@@ -72,7 +72,7 @@ lemma_glosses(lemma, gloss, gloss_full)
 
 | Passage | Decision |
 |---|---|
-| 1 John 5:7–8 | One 2:2 unit. The Comma words are flagged `latin_only` at the word level and kept out of alignment: "in cælo : Pater, Verbum, et Spiritus Sanctus : et hi tres unum sunt. Et tres sunt, qui testimonium dant in terra". "Quoniam tres sunt, qui testimonium dant" and 5:8's witnesses still link. |
+| 1 John 5:7–8 | Built as two 1:1 verses (narrower than the 2:2 unit first proposed). The Comma words are flagged `latin_only` at the word level and kept out of alignment: "in cælo : Pater, Verbum, et Spiritus Sanctus : et hi tres unum sunt. Et tres sunt, qui testimonium dant in terra". "Quoniam tres sunt, qui testimonium dant" and 5:8's witnesses still link. |
 | Mark 16:9–20 (12 verses) | Latin-only (gap in our pack). Shown at its own numbers. It links automatically once the interlinear pack is fixed and this pack is rebuilt. |
 | John 7:53–8:11 (12 verses) | Latin-only (SBLGNT keeps the passage in its apparatus). Shown at its own numbers. |
 | Acts 8:37 | Latin-only, shown after 8:36 and labelled "8:37 (Vulg.)". |
@@ -144,3 +144,27 @@ The 1.0/0.5 meaning is the same as in the OT, so the app is unchanged.
 - **LatinCy (la_core_web_lg) is MIT**, by Patrick J. Burns. The model card says nothing about whether its training treebanks (LASLA, UD Latin) constrain the outputs. I'll check those licences before shipping.
 - **Whitaker's WORDS** grants "any and all use of program and data", but it is not a standard licence.
 - **Missing credits.** LatinCy and WORDS already feed the shipped OT pack, but neither is in Acknowledgements. Add both rows.
+
+## Results (build of 2026-11-19, against interlinear etag 0b96e69b)
+
+Verse map: 7,951 Latin verses in 7,917 units: same 7,776, renumbered 104,
+unit 29, latin_only 42; 603 Latin-only words (whole verses plus the Comma and
+Received-Text spans in catss/data/nt_latin_only_words.tsv). The audit's 67
+disagreements with the verse aligner all fall inside hand-reviewed rows.
+
+Alignment: 115,503 links (1.0: 113,337; 0.5: 2,166; 2,419 unsupported grown
+links dropped). Every link resolves against the shipped interlinear (0
+dangling, 0 surface mismatches, 0 from Latin-only words).
+
+Gold (419 Latin words, the five sample passages): precision 99.5% (377/379;
+1.0 tier 375/377, 0.5 tier 2/2), recall 95.4%, sample coverage 90.5%.
+Corpus coverage: 115,173 of 125,966 linkable Latin words (91.4%). Both errors
+link a periphrastic auxiliary (sunt, est) to the next Greek article; most
+misses are those auxiliaries left unlinked.
+
+Lemma and parse: 126,569/126,569 words. Glosses: 99.5% of non-proper tokens;
+656 tokens unglossed (pharisaeus, sadducaei are not in WORDS; the rest are
+LatinCy's fused pronoun lemmas such as seipsum, egoipse, and a few
+mislemmas).
+
+Pack: 27.3 MB.
