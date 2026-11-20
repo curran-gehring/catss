@@ -83,3 +83,24 @@ def test_every_link_in_the_built_pack_resolves_against_the_shipped_interlinear()
     assert got["links"] > 0
     assert got["dangling"] == 0 and got["mismatched"] == 0 and got["latin_only_linked"] == 0
     assert got["resolved"] == got["links"]
+
+
+def test_failed_rebuild_keeps_the_previous_links(tmp_path, monkeypatch):
+    pack = _pack(tmp_path)
+    il = tmp_path / "bible_interlinear.sqlite"
+
+    def efl(src, trg):     # link every line's first Latin word to its first Greek word, both ways
+        return [[(0, 0)] for _ in src], [[(0, 0)] for _ in src]
+
+    an.align(pack, il, run_eflomal=efl)
+    before = sqlite3.connect(pack).execute("SELECT COUNT(*) FROM nt_align").fetchone()[0]
+    assert before > 0
+
+    def boom(*_a, **_k):
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(an, "refine_homes", boom)
+    with pytest.raises(RuntimeError):
+        an.align(pack, il, run_eflomal=efl)
+    c = sqlite3.connect(pack)
+    assert c.execute("SELECT COUNT(*) FROM nt_align").fetchone()[0] == before
+    c.close()

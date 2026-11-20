@@ -211,32 +211,43 @@ def align(pack: pathlib.Path, interlinear: pathlib.Path, ot_pack: pathlib.Path |
         ln.links = align_vulgate._gdf(fwd[k], rev[k], len(ln.lat), len(ln.grk))
     tiers = tier(corpus, min_support)
 
-    conn = sqlite3.connect(pack)
-    conn.execute("DROP TABLE IF EXISTS nt_align")
-    conn.executescript(ALIGN_SCHEMA)
     stats = {"units": len(units), "ot_lines": len(extra), "links": 0, "conf_1": 0, "conf_05": 0,
              "dropped_grown": 0}
-    verse_links: dict[int, list[tuple[int, int]]] = {}
-    for u, ln, kept in zip(units, lines, tiers):
-        stats["dropped_grown"] += len(ln.links) - len(kept)
-        for (i, j), conf in kept.items():
-            bk, ch, v, pos, surface = u.greek_refs[j]
-            conn.execute("INSERT INTO nt_align (vulgate_word_id, book_id, chapter, verse, word_position,"
-                         " greek_surface, confidence, method) VALUES (?,?,?,?,?,?,?,?)",
-                         (u.latin_word_ids[i], bk, ch, v, pos, surface, conf, METHOD))
-            verse_links.setdefault(u.latin_vm_ids[i], []).append((ch, v))
-            stats["links"] += 1
-            stats["conf_1" if conf == 1.0 else "conf_05"] += 1
-    homes = {vm: (ch, v) for vm, ch, v in conn.execute(
-        "SELECT id, chapter, verse FROM nt_verse_map WHERE status = 'unit'")}
-    moved = 0
-    for vm, (ch, v) in refine_homes(homes, verse_links).items():
-        if (ch, v) != homes[vm]:
-            moved += 1
-            conn.execute("UPDATE nt_verse_map SET chapter=?, verse=? WHERE id=?", (ch, v, vm))
-    stats["homes_moved"] = moved
-    conn.commit()
-    conn.close()
+    # One transaction for the drop, the new links and the moved homes: a rebuild
+    # that fails part-way leaves the previous alignment intact. (executescript
+    # would commit on its own, so the schema runs statement by statement.)
+    conn = sqlite3.connect(pack, isolation_level=None)
+    try:
+        conn.execute("BEGIN")
+        conn.execute("DROP TABLE IF EXISTS nt_align")
+        for stmt in (s.strip() for s in ALIGN_SCHEMA.split(";")):
+            if stmt:
+                conn.execute(stmt)
+        verse_links: dict[int, list[tuple[int, int]]] = {}
+        for u, ln, kept in zip(units, lines, tiers):
+            stats["dropped_grown"] += len(ln.links) - len(kept)
+            for (i, j), conf in kept.items():
+                bk, ch, v, pos, surface = u.greek_refs[j]
+                conn.execute("INSERT INTO nt_align (vulgate_word_id, book_id, chapter, verse, word_position,"
+                             " greek_surface, confidence, method) VALUES (?,?,?,?,?,?,?,?)",
+                             (u.latin_word_ids[i], bk, ch, v, pos, surface, conf, METHOD))
+                verse_links.setdefault(u.latin_vm_ids[i], []).append((ch, v))
+                stats["links"] += 1
+                stats["conf_1" if conf == 1.0 else "conf_05"] += 1
+        homes = {vm: (ch, v) for vm, ch, v in conn.execute(
+            "SELECT id, chapter, verse FROM nt_verse_map WHERE status = 'unit'")}
+        moved = 0
+        for vm, (ch, v) in refine_homes(homes, verse_links).items():
+            if (ch, v) != homes[vm]:
+                moved += 1
+                conn.execute("UPDATE nt_verse_map SET chapter=?, verse=? WHERE id=?", (ch, v, vm))
+        stats["homes_moved"] = moved
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.close()
     stats["verify"] = verify(pack, interlinear)
     return stats
 
