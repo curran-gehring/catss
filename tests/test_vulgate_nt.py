@@ -116,3 +116,25 @@ def test_load_unit_rows_rejects_malformed_lines(tmp_path):
     p.write_text("43\t6:51\n", encoding="utf-8")
     with pytest.raises(ValueError, match="line 1"):
         vn.load_unit_rows(p)
+
+
+def test_pairwise_row_expands_a_shift_into_renumbered_one_to_one_units():
+    lat = [(8, 39), (9, 1), (9, 2)]
+    grk = [(9, 1), (9, 2), (9, 3)]
+    units = vn.resolve_units(lat, grk, rows=[
+        vn.UnitRow(latin="8:39", greek="9:1", home="", note="seam"),
+        vn.UnitRow(latin="9:1-2", greek="9:2-3", home="pairwise", note="Mark 9 runs one ahead"),
+    ])
+    assert [(u.latin, u.greek, u.status) for u in units] == [
+        ([(8, 39)], [(9, 1)], ["renumbered"]),
+        ([(9, 1)], [(9, 2)], ["renumbered"]),
+        ([(9, 2)], [(9, 3)], ["renumbered"]),
+    ]
+    assert units[1].note == "Mark 9 runs one ahead"
+
+
+def test_pairwise_needs_equal_counts():
+    with pytest.raises(ValueError, match="pairwise"):
+        vn.resolve_units([(1, 1), (1, 2)], [(1, 1)], rows=[
+            vn.UnitRow(latin="1:1-2", greek="1:1", home="pairwise", note=""),
+        ])
