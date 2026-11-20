@@ -21,6 +21,9 @@ when ESV prints it, else the verse it follows); a unit verse starts on the
 unit's first Greek verse (or a curated home) and align_vulgate_nt refines it to
 the verse holding most of its linked Greek words.
 
+A row whose home is `pairwise` pairs its Latin and Greek ranges verse by verse
+(a run of 1:1 renumbered verses, e.g. Mark 9 one ahead of ESV).
+
 Only exceptions are curated (catss/data/nt_units.tsv); every other Latin verse
 must have a same-numbered Greek verse, and every Greek verse must land in
 exactly one unit. Anything else fails loudly.
@@ -154,6 +157,12 @@ def resolve_units(latin: list[Ref], greek: list[Ref], rows: list[UnitRow]) -> li
             if r in used_grk:
                 raise ValueError(f"Greek verse {r[0]}:{r[1]} listed twice")
             used_grk.add(r)
+        if row.home == "pairwise":
+            if len(lat) != len(grk):
+                raise ValueError(f"pairwise row {row.latin!r} pairs {len(lat)} Latin with {len(grk)} Greek verses")
+            for lr, gr in zip(lat, grk):
+                curated.append(Unit([lr], [gr], ["same" if lr == gr else "renumbered"], [gr], row.note))
+            continue
         homes = [_ref(h) for h in row.home.split(",") if h.strip()]
         if not grk:
             if len(homes) == 1:
