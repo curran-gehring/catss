@@ -9,6 +9,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# NT Latin pack: the verse aligner (nt_versemap_audit) needs numpy; the
+# lemmatize/align steps also need spaCy + la_core_web_lg and eflomal (mac-mini).
+nt = ["numpy>=1.24"]
 
 [project.scripts]
 catss = "catss.cli:main"
@@ -20,3 +23,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["catss*"]
+
+[tool.setuptools.package-data]
+catss = ["data/*.tsv"]

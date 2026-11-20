@@ -1,0 +1,56 @@
+# NT Latin (Clementine) <-> SBLGNT verse units: only the exceptions; every other
+# Latin verse pairs with the same-numbered Greek verse. Reviewed by hand against
+# the text on 2026-11-19 (see docs/nt-latin-design.md, decision 3).
+# Columns: book_id, latin refs, greek refs (empty = latin_only), home, note.
+#   refs: ch:v, comma lists, ranges (16:9-20, 7:53-8:11) in each side's own order
+#   home: the ESV verse a latin_only verse is shown under (own number when ESV
+#         prints the passage, else the verse it follows); 'pairwise' pairs a
+#         shifted run verse by verse; empty for 1:1 rows and units
+# book	latin	greek	home	note
+40	5:4,5:5	5:4,5:5		beatitudes in the other order (Latin 5:4 meek = ESV 5:5)
+40	17:14	17:14,17:15		Latin 17:14 also holds ESV 17:15
+40	17:15-19	17:16-20	pairwise	Matthew 17 one ahead after 17:14
+40	17:20		17:20	TR 17:21 (prayer and fasting); not in SBLGNT
+40	17:21-26	17:22-27	pairwise	Matthew 17 one ahead after the omitted verse
+40	18:11		18:10	TR 18:11; not in SBLGNT
+40	21:25,21:26	21:25,21:26		verse break falls at a different word
+40	23:14		23:13	TR 23:14 (widows' houses); not in SBLGNT
+41	4:40	4:40,4:41		Latin 4:40 also holds ESV 4:41
+41	7:16		7:15	TR 7:16; not in SBLGNT
+41	8:39	9:1		chapter seam: Latin 8:39 = ESV 9:1
+41	9:1-42	9:2-43	pairwise	Mark 9 one ahead
+41	9:43		9:43	TR 9:44 (worm and fire); not in SBLGNT
+41	9:44	9:45		
+41	9:45		9:45	TR 9:46 (worm and fire); not in SBLGNT
+41	9:46-49	9:47-50	pairwise	Mark 9 one ahead
+41	11:26		11:25	TR 11:26; not in SBLGNT
+41	15:28		15:27	TR 15:28; not in SBLGNT
+41	16:9-20		16:9,16:10,16:11,16:12,16:13,16:14,16:15,16:16,16:17,16:18,16:19,16:20	longer ending: in SBLGNT but missing from the interlinear pack
+42	9:42,9:43	9:42		verse break falls at a different word
+42	9:44	9:43,9:44		
+42	17:36,17:37	17:37		Latin 17:35 also holds TR 17:36 (see word spans)
+42	23:17		23:16	TR 23:17; not in SBLGNT
+43	5:4		5:3	TR 5:4 (the angel stirring the pool); not in SBLGNT
+43	6:51,6:52	6:51		ESV 6:51 spans Latin 6:51-52
+43	6:53-72	6:52-71	pairwise	John 6 one behind after 6:52
+43	7:53-8:11		7:53,8:1,8:2,8:3,8:4,8:5,8:6,8:7,8:8,8:9,8:10,8:11	pericope adulterae; SBLGNT keeps it in the apparatus
+43	10:41,10:42	10:41,10:42		verse break falls at a different word
+43	11:56	11:56,11:57		Latin 11:56 also holds ESV 11:57
+44	7:55	7:55,7:56		Latin 7:55 also holds ESV 7:56
+44	7:56-58	7:57-59	pairwise	Acts 7 one behind
+44	7:59,8:1	7:60,8:1		Saul's consent closes Latin 7:59 but opens ESV 8:1
+44	8:37		8:36	TR 8:37 (the eunuch's confession); not in SBLGNT
+44	14:6	14:6,14:7		Latin 14:6 also holds ESV 14:7
+44	14:7-27	14:8-28	pairwise	Acts 14 one behind
+44	15:34		15:33	TR 15:34; not in SBLGNT
+44	24:7		24:6	TR 24:7; not in SBLGNT (see word spans for 24:6b and 24:8a)
+44	28:29		28:28	TR 28:29; not in SBLGNT
+45	16:24		16:23	TR 16:24 (grace benediction); not in SBLGNT
+45	16:25-27		16:25,16:26,16:27	doxology: in SBLGNT but missing from the interlinear pack
+47	1:23	1:23,1:24		Latin 1:23 also holds ESV 1:24
+47	13:12	13:12,13:13		Latin 13:12 holds ESV 13:12-13
+47	13:13	13:14		
+64	1:14	1:14,1:15		Latin 1:14 holds ESV 1:14-15
+66	12:17,12:18	12:17		Latin 12:18 (the dragon on the sand) closes ESV 12:17
+66	20:7	20:7,20:8		Latin 20:7 also holds ESV 20:8
+66	20:8-10	20:9,20:10		verse breaks fall at different words

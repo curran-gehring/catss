@@ -1,0 +1,10 @@
+# Words shown in the Latin but never linked: Received-Text (or Comma) words inside
+# verses that otherwise align. Positions are tokenize_latin positions (1-based,
+# inclusive); expect is the folded surfaces, checked at build time.
+# book	ref	from	to	expect
+62	5:7	7	18	in caelo Pater Verbum et Spiritus Sanctus et hi tres unum sunt
+62	5:8	1	8	Et tres sunt qui testimonium dant in terra
+42	17:35	11	18	duo in agro unus assumetur et alter relinquetur
+43	5:3	10	12	expectantium aquae motum
+44	24:6	10	14	voluimus secundum legem nostram judicare
+44	24:8	1	6	jubens accusatores ejus ad te venire
