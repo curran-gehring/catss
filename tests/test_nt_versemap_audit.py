@@ -71,3 +71,9 @@ def test_unit_score_prefers_true_translation_over_neighbour():
     m = _model()
     assert m.score(["a", "b"], ["A", "B"]) > m.score(["a", "b"], ["C"])
     assert math.isfinite(m.score(["a"], []))
+
+
+def test_unreviewed_keeps_only_disagreements_outside_curated_rows():
+    found = [((1, 2), [(1, 2)], [(1, 2), (1, 3)]), ((9, 9), [(9, 9)], [])]
+    reviewed = {(1, 2)}
+    assert au.unreviewed(found, reviewed) == [((9, 9), [(9, 9)], [])]
