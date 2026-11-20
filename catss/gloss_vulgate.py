@@ -62,7 +62,7 @@ def _fold(s: str) -> str:
     return s.lower().replace("v", "u").replace("j", "i")
 
 
-def _candidates(stem1: str, pos: str, codes: str) -> list[tuple[str, bool]]:
+def _candidates(stem1: str, pos: str, codes: str, perfect: str | None = None) -> list[tuple[str, bool]]:
     """(candidate_headword, primary) pairs for one DICTLINE entry.
 
     `primary` marks the reconstruction the entry's OWN declension/conjugation
@@ -82,9 +82,17 @@ def _candidates(stem1: str, pos: str, codes: str) -> list[tuple[str, bool]]:
         if conj == "5":
             return [(stem1 + "um", True)]
         theme = "e" if conj == "2" else ""
-        if " DEP" in codes:
-            return [(stem1 + theme + "or", True)]
-        return [(stem1 + theme + "o", True)]
+        head = stem1 + theme + ("or" if " DEP" in codes else "o")
+        if " IMPERS" in codes:
+            # Impersonals are cited in the 3rd singular (oportet, decet,
+            # accidit); LatinCy sometimes gives the 1st person, kept as fallback.
+            return [(stem1 + {"1": "at", "2": "et"}.get(conj, "it"), True), (head, False)]
+        # Whitaker encodes a verb cited by its perfect (coepi) with stem1 =
+        # perfect stem + "i"; only then is perfect+"i" a headword, and only as
+        # a fallback ("reliqui" must stay the adjective, not relinquo).
+        if perfect and stem1 == perfect + "i":
+            return [(head, True), (stem1, False)]
+        return [(head, True)]
     if pos == "N":
         m = re.match(r"\s*N\s+(\d)", codes)
         decl = m.group(1) if m else ""
@@ -244,7 +252,8 @@ def parse_dictline(path: Path):
             full = senses[0][:60].rstrip(" ,")
         # short: interlinear-style 1-3 words, for the word card
         short = _shorten(senses[0]) if senses else full
-        for cand, primary in _candidates(stem1, pos, body):
+        perfect = stems[2] if pos == "V" and len(stems) >= 3 else None
+        for cand, primary in _candidates(stem1, pos, body, perfect):
             yield _fold(cand), pos, freq, order, short, full, primary
 
 
